@@ -153,7 +153,7 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com" \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\
