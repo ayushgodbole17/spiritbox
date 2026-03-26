@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: spiritbox-db
+    environment:
+      POSTGRES_USER: spiritbox
+      POSTGRES_PASSWORD: spiritbox
+      POSTGRES_DB: spiritbox
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spiritbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Spiritbox API
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spiritbox-api
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      WEAVIATE_URL: http://weaviate:8080
+      DATABASE_URL: postgresql+asyncpg://spiritbox:spiritbox@db:5432/spiritbox
+    depends_on:
+      weaviate:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      # Mount source for local hot-reload (remove in production)
+      - .:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+
+  # ---------------------------------------------------------------------------
+  # Weaviate vector database
+  # ---------------------------------------------------------------------------
+  weaviate:
+    image: semitechnologies/weaviate:1.27.0
+    container_name: spiritbox-weaviate
+    ports:
+      - "8081:8080"   # Host 8081 -> container 8080
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-openai"
+      ENABLE_MODULES: "text2vec-openai"
+      OPENAI_APIKEY: "${OPENAI_API_KEY}"
+      CLUSTER_HOSTNAME: "node1"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Spiritbox Frontend (React + Vite)
+  # ---------------------------------------------------------------------------
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - '3000:3000'
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - api
+
+volumes:
+  weaviate_data:
+    driver: local
+  postgres_data:
+    driver: local

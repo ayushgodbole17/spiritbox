@@ -1,0 +1,56 @@
+[
+  {
+    "version": "0.2.0",
+    "date": "2026-03-26",
+    "type": "feature",
+    "title": "PostgreSQL persistence + Admin dashboard",
+    "changes": [
+      "Entries and sentence tags now saved to PostgreSQL (Cloud SQL-ready) in addition to Weaviate",
+      "PostgreSQL service added to docker-compose with persistent volume",
+      "Admin dashboard at /admin — protected by username/password",
+      "Admin dashboard shows eval results, LangFuse traces, cache stats, and release notes",
+      "CHANGELOG tracking added"
+    ]
+  },
+  {
+    "version": "0.1.1",
+    "date": "2026-03-25",
+    "type": "feature",
+    "title": "Phase 3: Model router + semantic cache",
+    "changes": [
+      "Model routing: classifier and summarizer use gpt-4o-mini (Tier 1), entity extractor and intent detector use gpt-4o (Tier 2)",
+      "In-memory semantic cache — skips LLM calls for near-duplicate entries (cosine similarity threshold: 0.95)",
+      "Cache stats exposed on GET /health",
+      "model_used and cache_hits tracked per pipeline run and stored with entry"
+    ]
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-03-24",
+    "type": "feature",
+    "title": "Phase 2: LangFuse prompt management + agent pipeline",
+    "changes": [
+      "All 4 agents wired to real GPT-4o calls with LangFuse tracing",
+      "Prompt management: prompts registered in LangFuse, fetched at runtime with local fallback",
+      "3-dot menu on entries: edit and delete inline",
+      "Month separator headings in entry list",
+      "Redesigned result card: summary, per-sentence breakdown, entity chips",
+      "Mobile-friendly layout with bottom nav tab switching",
+      "Fixed categories display bug (was showing 'other other other' for past entries)"
+    ]
+  },
+  {
+    "version": "0.0.1",
+    "date": "2026-03-20",
+    "type": "feature",
+    "title": "Phase 1: Core loop",
+    "changes": [
+      "FastAPI skeleton with /ingest/text, /ingest/audio, /entries routes",
+      "LangGraph pipeline: entity extractor → classifier → intent detector → summarizer",
+      "Weaviate vector store for long-term memory and semantic search",
+      "PostgreSQL schema (SQLAlchemy ORM): entries, events, sentence_tags, eval_runs",
+      "Docker Compose: API + Weaviate + frontend",
+      "React + Vite frontend with text entry, audio recorder, entry list, entry detail"
+    ]
+  }
+]

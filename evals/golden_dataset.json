@@ -1,0 +1,222 @@
+[
+  {
+    "id": "g001",
+    "text": "Went to the gym this morning, did 45 minutes on the treadmill. Feeling good about staying consistent.",
+    "expected_categories": ["fitness", "health"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g002",
+    "text": "Had a difficult meeting with my manager Sarah today. She said my Q3 performance was below expectations. Feeling anxious and a bit demotivated.",
+    "expected_categories": ["work", "mental_health"],
+    "expected_entities": {
+      "people": ["Sarah"],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g003",
+    "text": "Paid my credit card bill today — 18,500 rupees. Also transferred 5000 to savings. Money feels tight this month.",
+    "expected_categories": ["finances"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": ["18500", "5000"],
+      "events": []
+    }
+  },
+  {
+    "id": "g004",
+    "text": "Had a really nice dinner with Priya and Rohan at the new Italian place in Bandra. Great food, great conversation.",
+    "expected_categories": ["food", "relationships"],
+    "expected_entities": {
+      "people": ["Priya", "Rohan"],
+      "places": ["Bandra"],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g005",
+    "text": "Feeling very low today. Not sure why — just a general heaviness. Didn't want to get out of bed.",
+    "expected_categories": ["mental_health"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g006",
+    "text": "Started learning Python decorators today. It finally clicked after watching three YouTube videos. Excited to apply this.",
+    "expected_categories": ["learning"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g007",
+    "text": "Doctor's appointment tomorrow at 10am at Lilavati Hospital for a routine checkup. Need to fast from midnight.",
+    "expected_categories": ["health"],
+    "expected_entities": {
+      "people": [],
+      "places": ["Lilavati Hospital"],
+      "amounts": [],
+      "events": ["Doctor's appointment tomorrow at 10am"]
+    }
+  },
+  {
+    "id": "g008",
+    "text": "Worked on the Spiritbox project all day. Fixed a Weaviate bug that's been bothering me for a week. Shipped it!",
+    "expected_categories": ["work"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g009",
+    "text": "Called mum and dad. They're flying in on the 15th for a week. Need to plan some family activities.",
+    "expected_categories": ["family", "relationships"],
+    "expected_entities": {
+      "people": ["mum", "dad"],
+      "places": [],
+      "amounts": [],
+      "events": ["flying in on the 15th"]
+    }
+  },
+  {
+    "id": "g010",
+    "text": "Band practice tonight. We ran through the new setlist twice. The bridge in the third song still isn't tight enough.",
+    "expected_categories": ["music", "hobbies"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g011",
+    "text": "Booked flights to Goa for the long weekend — 15th to 17th November. Staying at a small beach resort with Aditya.",
+    "expected_categories": ["travel"],
+    "expected_entities": {
+      "people": ["Aditya"],
+      "places": ["Goa"],
+      "amounts": [],
+      "events": ["trip 15th to 17th November"]
+    }
+  },
+  {
+    "id": "g012",
+    "text": "Really struggling to focus lately. Been doom-scrolling for hours. Need to cut back on screen time.",
+    "expected_categories": ["mental_health"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g013",
+    "text": "Salary credited today — 1,20,000 rupees. Set a budget for the month: 30k rent, 15k groceries, 10k savings.",
+    "expected_categories": ["finances"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": ["120000", "30000", "15000", "10000"],
+      "events": []
+    }
+  },
+  {
+    "id": "g014",
+    "text": "Morning run — 6km in 34 minutes. Personal best! Legs are sore but feeling accomplished.",
+    "expected_categories": ["fitness", "health"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": ["6", "34"],
+      "events": []
+    }
+  },
+  {
+    "id": "g015",
+    "text": "Had lunch with old college friends Nikhil and Siddharth. Talked for three hours. Really missed them.",
+    "expected_categories": ["relationships"],
+    "expected_entities": {
+      "people": ["Nikhil", "Siddharth"],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g016",
+    "text": "Team offsite is next Friday at the Taj in Pune. Need to prep slides for the product review presentation.",
+    "expected_categories": ["work"],
+    "expected_entities": {
+      "people": [],
+      "places": ["Taj", "Pune"],
+      "amounts": [],
+      "events": ["team offsite next Friday"]
+    }
+  },
+  {
+    "id": "g017",
+    "text": "Tried a new recipe today — dal makhani from scratch. Took two hours but it turned out amazing.",
+    "expected_categories": ["food", "hobbies"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": [],
+      "events": []
+    }
+  },
+  {
+    "id": "g018",
+    "text": "Meditation streak: 21 days straight. 10 minutes every morning before coffee. Noticeably calmer.",
+    "expected_categories": ["mental_health", "health"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": ["21", "10"],
+      "events": []
+    }
+  },
+  {
+    "id": "g019",
+    "text": "Quarterly review with Vikram went well. He mentioned a possible promotion in January. Excited but trying not to get my hopes up.",
+    "expected_categories": ["work"],
+    "expected_entities": {
+      "people": ["Vikram"],
+      "places": [],
+      "amounts": [],
+      "events": ["possible promotion in January"]
+    }
+  },
+  {
+    "id": "g020",
+    "text": "Bought new running shoes online — 4500 rupees from Nike. Also renewed my gym membership for 6 months at 9000.",
+    "expected_categories": ["fitness", "finances"],
+    "expected_entities": {
+      "people": [],
+      "places": [],
+      "amounts": ["4500", "9000"],
+      "events": []
+    }
+  }
+]

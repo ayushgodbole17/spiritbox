@@ -1,0 +1,20 @@
+[
+  {
+    "id": "gd_001",
+    "input": "I have a dentist appointment tomorrow at 10am. Feeling anxious about it. Also paid rent today, 22000 rupees.",
+    "expected_categories": [["health"], ["mental_health"], ["finances"]],
+    "expected_entities": {
+      "events": [{"description": "dentist appointment", "datetime": "tomorrow at 10am"}],
+      "amounts": [{"description": "rent", "amount": 22000, "currency": "INR"}]
+    }
+  },
+  {
+    "id": "gd_002",
+    "input": "Had a great jam session with the band today. We finished a new song. Meeting with my manager next Monday at 3pm.",
+    "expected_categories": [["music"], ["music"], ["work"]],
+    "expected_entities": {
+      "events": [{"description": "meeting with manager", "datetime": "next Monday at 3pm"}],
+      "people": ["manager"]
+    }
+  }
+]

@@ -1,0 +1,1 @@
+# Spiritbox application package

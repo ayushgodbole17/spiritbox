@@ -1,0 +1,13 @@
+frontend/
+.env
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.git/
+.gitignore
+*.log
+weaviate_data/

@@ -1,0 +1,50 @@
+# ============================================================
+# Spiritbox — pinned dependencies
+# Tested against Python 3.11 (Docker) and Python 3.14 (local).
+# Run: pip install -r requirements.txt
+# ============================================================
+
+# --- Web framework ---
+fastapi==0.135.2
+uvicorn==0.42.0
+python-multipart==0.0.22
+
+# --- Config / env ---
+pydantic==2.12.5
+pydantic-settings==2.13.1
+python-dotenv==1.2.2
+
+# --- LLM orchestration ---
+# NOTE: langfuse 4.x moved observe to top-level (from langfuse import observe)
+#       langfuse.decorators no longer exists — do not downgrade without updating agents
+langgraph==1.1.3
+langchain==1.2.13
+langchain-openai==1.1.12
+langfuse==4.0.1
+
+# --- LLM clients ---
+# NOTE: openai 2.x — chat.completions / audio / embeddings API shape unchanged from 1.x
+openai==2.29.0
+anthropic==0.86.0
+
+# --- Vector store ---
+weaviate-client==4.20.4
+
+# --- Relational DB (Cloud SQL / PostgreSQL) ---
+sqlalchemy==2.0.36
+asyncpg==0.31.0
+
+# --- GCP services ---
+google-cloud-firestore==2.26.0
+google-cloud-scheduler==2.18.0
+functions-framework==3.10.1
+
+# --- Email ---
+sendgrid==6.12.5
+
+# --- HTTP client ---
+httpx==0.28.1
+
+# --- Testing ---
+pytest==9.0.2
+pytest-asyncio==1.3.0
