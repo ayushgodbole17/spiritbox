@@ -9,7 +9,7 @@ on:
 env:
   GCP_REGION: asia-south1
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/spiritbox
+  IMAGE_NAME: asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/spiritbox/spiritbox
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -69,8 +69,8 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker --quiet
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
       - name: Build Docker image
         run: |
@@ -114,7 +114,8 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 5 \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }}" \
+            --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\
