@@ -25,5 +25,20 @@ frontend/dist/
 .idea/
 *.DS_Store
 
-# Weaviate local data
+# Weaviate local data (replaced by pgvector)
 weaviate_data/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Eval artifacts
+evals/results_latest.json
+
+# Local scripts
+deploy-frontend.ps1
+
+# Temp files
+db_url.txt
+tmp.txt
