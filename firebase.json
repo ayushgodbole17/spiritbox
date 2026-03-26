@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "spiritbox-491411",
     "public": "frontend/dist",
     "ignore": [
       "firebase.json",
