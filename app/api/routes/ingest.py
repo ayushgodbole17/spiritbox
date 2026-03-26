@@ -35,7 +35,7 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
     Accepts a raw text journal entry, runs it through the agent pipeline,
     persists to Weaviate, and returns the structured output.
     """
-    logger.info(f"Ingesting text entry for user={request.user_id}, length={len(request.text)}")
+    logger.info(f"Ingesting text entry for user={user_id}, length={len(request.text)}")
 
     try:
         result = await run_entry_pipeline(request.text, user_id=user_id)

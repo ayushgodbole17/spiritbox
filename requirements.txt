@@ -27,8 +27,8 @@ langfuse==4.0.1
 openai==2.29.0
 anthropic==0.86.0
 
-# --- Vector store ---
-weaviate-client==4.20.4
+# --- Vector store (pgvector via PostgreSQL — replaces Weaviate) ---
+pgvector==0.4.2
 
 # --- Relational DB (Cloud SQL / PostgreSQL) ---
 sqlalchemy==2.0.36

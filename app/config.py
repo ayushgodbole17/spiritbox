@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = Field("", description="LangFuse secret key")
     LANGFUSE_HOST: str = Field("https://cloud.langfuse.com", description="LangFuse host")
 
-    # Weaviate
-    WEAVIATE_URL: str = Field("http://localhost:8081", description="Weaviate URL")
-    WEAVIATE_API_KEY: Optional[str] = Field(None, description="Weaviate API key")
+    # Weaviate (kept for config compatibility — no longer used, replaced by pgvector)
+    WEAVIATE_URL: str = Field("", description="Unused — replaced by pgvector")
+    WEAVIATE_API_KEY: Optional[str] = Field(None, description="Unused — replaced by pgvector")
 
     # PostgreSQL (Cloud SQL)
     DATABASE_URL: str = Field("postgresql+asyncpg://user:pass@localhost:5432/spiritbox", description="Async PostgreSQL connection string")

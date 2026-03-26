@@ -1,227 +1,232 @@
 """
-Weaviate vector store wrapper for Spiritbox JournalEntry objects.
+pgvector-based vector store — replaces Weaviate.
 
-Provides:
-  - init_schema()         — idempotently creates the JournalEntry class
-  - upsert_entry(entry)   — insert or update a JournalEntry, returns UUID
-  - semantic_search(...)  — near-text vector search
-  - get_entry(entry_id)   — fetch single object by UUID
+Uses the existing Cloud SQL PostgreSQL instance with the pgvector extension.
+Embeddings are generated via OpenAI text-embedding-3-small (1536 dims).
+
+Same public interface as the old Weaviate module:
+  - init_schema()         — enables pgvector extension + creates table
+  - upsert_entry(entry)   — embed + insert/update
+  - semantic_search(...)  — cosine similarity search
+  - get_entry(entry_id)   — fetch by UUID
+  - update_entry(...)     — update raw_text
+  - delete_entry(...)     — delete by UUID
   - list_entries(limit)   — paginated listing
 """
+from __future__ import annotations
+
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import weaviate
-import weaviate.classes as wvc
-from weaviate.classes.config import Configure, Property, DataType
+from sqlalchemy import text
 
 from app.config import settings
+from app.db.session import engine, get_session
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Schema definition
-# ---------------------------------------------------------------------------
-
-JOURNAL_CLASS = "JournalEntry"
-
-_SCHEMA = {
-    "class": JOURNAL_CLASS,
-    "properties": [
-        {"name": "raw_text", "dataType": ["text"]},
-        {"name": "summary", "dataType": ["text"]},
-        {"name": "categories", "dataType": ["text[]"]},
-        {"name": "sentence_tags", "dataType": ["text"]},   # JSON string
-        {"name": "entry_date", "dataType": ["date"]},
-        {"name": "user_id", "dataType": ["text"]},
-    ],
-    "vectorizer": "text2vec-openai",
-}
-
-
-def _get_client() -> weaviate.WeaviateClient:
-    """Create and return a connected Weaviate client."""
-    auth = None
-    if settings.WEAVIATE_API_KEY:
-        auth = weaviate.auth.AuthApiKey(settings.WEAVIATE_API_KEY)
-
-    client = weaviate.connect_to_custom(
-        http_host=settings.WEAVIATE_URL.replace("http://", "").replace("https://", "").split(":")[0],
-        http_port=int(settings.WEAVIATE_URL.split(":")[-1]) if ":" in settings.WEAVIATE_URL.split("//")[-1] else 80,
-        http_secure=settings.WEAVIATE_URL.startswith("https"),
-        grpc_host=settings.WEAVIATE_URL.replace("http://", "").replace("https://", "").split(":")[0],
-        grpc_port=50051,
-        grpc_secure=False,
-        auth_credentials=auth,
-        headers={"X-OpenAI-Api-Key": settings.OPENAI_API_KEY} if settings.OPENAI_API_KEY else {},
-    )
-    return client
+_EMBED_MODEL = "text-embedding-3-small"
+_EMBED_DIMS  = 1536
 
 
 # ---------------------------------------------------------------------------
-# Public interface
+# Embedding helper
+# ---------------------------------------------------------------------------
+
+async def _embed(text_input: str) -> list[float]:
+    """Generate an embedding vector using OpenAI."""
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    resp = await client.embeddings.create(model=_EMBED_MODEL, input=text_input[:8000])
+    return resp.data[0].embedding
+
+
+# ---------------------------------------------------------------------------
+# Schema init
 # ---------------------------------------------------------------------------
 
 async def init_schema() -> None:
     """
-    Idempotently ensures the JournalEntry collection exists in Weaviate.
-    Safe to call multiple times — does nothing if already present.
+    Enable pgvector extension and create entry_embeddings table if absent.
+    Safe to call multiple times.
     """
-    try:
-        client = _get_client()
-        with client:
-            collections = client.collections.list_all()
-            existing = [c for c in collections]
-            if JOURNAL_CLASS not in existing:
-                client.collections.create_from_dict(_SCHEMA)
-                logger.info(f"Created Weaviate collection '{JOURNAL_CLASS}'.")
-            else:
-                logger.info(f"Weaviate collection '{JOURNAL_CLASS}' already exists — skipping.")
-    except Exception as e:
-        logger.warning(f"init_schema failed: {e}")
-        raise
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS entry_embeddings (
+                entry_id    UUID PRIMARY KEY,
+                user_id     TEXT NOT NULL DEFAULT 'default',
+                raw_text    TEXT,
+                summary     TEXT,
+                categories  TEXT[],
+                sentence_tags TEXT,
+                entry_date  TIMESTAMPTZ DEFAULT NOW(),
+                embedding   vector({_EMBED_DIMS})
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS entry_embeddings_ivfflat_idx
+            ON entry_embeddings
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 100)
+        """))
+    logger.info("pgvector schema ready.")
 
+
+# ---------------------------------------------------------------------------
+# Write
+# ---------------------------------------------------------------------------
 
 async def upsert_entry(entry: dict) -> str:
     """
-    Insert a JournalEntry into Weaviate. Returns the UUID used.
-
-    Uses the entry_id from the dict if provided (so it matches the PostgreSQL
-    row), otherwise generates a new UUID.
-
-    Args:
-        entry: dict with keys matching the schema properties.
-
-    Returns:
-        UUID string of the inserted object.
+    Embed the entry text and upsert into entry_embeddings.
+    Returns the entry_id UUID string.
     """
     entry_id = entry.get("entry_id") or str(uuid.uuid4())
+    raw_text  = entry.get("raw_text", "")
+    summary   = entry.get("summary", "")
 
-    properties = {
-        "raw_text": entry.get("raw_text", ""),
-        "summary": entry.get("summary", ""),
-        "categories": entry.get("categories", []),
-        "sentence_tags": entry.get("sentence_tags", "{}"),
-        "entry_date": datetime.now(timezone.utc).isoformat(),
-        "user_id": entry.get("user_id", "default"),
-    }
+    # Embed summary if available, else raw text
+    embed_text = summary if summary else raw_text
+    try:
+        vector = await _embed(embed_text)
+    except Exception as exc:
+        logger.warning(f"[vector_store] embedding failed: {exc}. Skipping upsert.")
+        raise
 
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        result = collection.data.insert(
-            properties=properties,
-            uuid=entry_id,
-        )
-        return str(result)
+    categories    = entry.get("categories", [])
+    sentence_tags = entry.get("sentence_tags", "")
+    if isinstance(sentence_tags, (list, dict)):
+        sentence_tags = json.dumps(sentence_tags)
+    user_id = entry.get("user_id", "default")
+
+    async with get_session() as session:
+        await session.execute(text("""
+            INSERT INTO entry_embeddings
+                (entry_id, user_id, raw_text, summary, categories, sentence_tags, entry_date, embedding)
+            VALUES
+                (:entry_id, :user_id, :raw_text, :summary, :categories, :sentence_tags, :entry_date, :embedding)
+            ON CONFLICT (entry_id) DO UPDATE SET
+                raw_text      = EXCLUDED.raw_text,
+                summary       = EXCLUDED.summary,
+                categories    = EXCLUDED.categories,
+                sentence_tags = EXCLUDED.sentence_tags,
+                embedding     = EXCLUDED.embedding
+        """), {
+            "entry_id":     entry_id,
+            "user_id":      user_id,
+            "raw_text":     raw_text,
+            "summary":      summary,
+            "categories":   categories,
+            "sentence_tags": sentence_tags,
+            "entry_date":   datetime.now(timezone.utc),
+            "embedding":    str(vector),
+        })
+        await session.commit()
+
+    logger.debug(f"[vector_store] upserted {entry_id}")
+    return entry_id
 
 
-async def semantic_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+# ---------------------------------------------------------------------------
+# Read
+# ---------------------------------------------------------------------------
+
+async def semantic_search(query: str, limit: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
     """
-    Perform near-text (semantic) search against JournalEntry objects.
+    Cosine similarity search over entry_embeddings.
 
     Args:
-        query: Natural language search string.
-        limit: Maximum number of results.
+        query:   Natural language search string.
+        limit:   Max results.
+        user_id: If set, filter to this user's entries only.
 
     Returns:
-        List of matching entry dicts with a 'score' field.
+        List of entry dicts with a 'score' field (1 = identical, 0 = unrelated).
     """
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        response = collection.query.near_text(
-            query=query,
-            limit=limit,
-            return_metadata=wvc.query.MetadataQuery(certainty=True, distance=True),
-        )
+    vector = await _embed(query)
+
+    filter_clause = "WHERE user_id = :user_id" if user_id else ""
+    params: dict = {"embedding": str(vector), "limit": limit}
+    if user_id:
+        params["user_id"] = user_id
+
+    async with get_session() as session:
+        rows = await session.execute(text(f"""
+            SELECT
+                entry_id::text,
+                user_id,
+                raw_text,
+                summary,
+                categories,
+                sentence_tags,
+                entry_date,
+                1 - (embedding <=> :embedding::vector) AS score
+            FROM entry_embeddings
+            {filter_clause}
+            ORDER BY embedding <=> :embedding::vector
+            LIMIT :limit
+        """), params)
         results = []
-        for obj in response.objects:
-            item = dict(obj.properties)
-            item["entry_id"] = str(obj.uuid)
-            item["score"] = obj.metadata.certainty if obj.metadata else None
+        for row in rows.mappings():
+            item = dict(row)
+            item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
             results.append(item)
         return results
 
 
 async def get_entry(entry_id: str) -> Optional[dict[str, Any]]:
-    """
-    Fetch a single JournalEntry by UUID.
-
-    Args:
-        entry_id: Weaviate UUID string.
-
-    Returns:
-        Entry dict or None if not found.
-    """
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        try:
-            obj = collection.data.get_by_id(uuid=entry_id)
-        except Exception:
+    """Fetch a single entry by UUID. Returns None if not found."""
+    async with get_session() as session:
+        rows = await session.execute(text("""
+            SELECT entry_id::text, user_id, raw_text, summary, categories,
+                   sentence_tags, entry_date
+            FROM entry_embeddings WHERE entry_id = :entry_id
+        """), {"entry_id": entry_id})
+        row = rows.mappings().first()
+        if row is None:
             return None
-
-        if obj is None:
-            return None
-
-        item = dict(obj.properties)
-        item["entry_id"] = str(obj.uuid)
+        item = dict(row)
+        item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
         return item
 
 
 async def update_entry(entry_id: str, raw_text: str) -> bool:
-    """Update the raw_text of a JournalEntry. Returns True if updated."""
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        try:
-            collection.data.update(uuid=entry_id, properties={"raw_text": raw_text})
-            logger.info(f"Updated Weaviate entry {entry_id}.")
-            return True
-        except Exception as e:
-            logger.warning(f"update_entry failed for {entry_id}: {e}")
-            return False
+    """Update raw_text and re-embed. Returns True if the entry existed."""
+    existing = await get_entry(entry_id)
+    if existing is None:
+        return False
+    existing["raw_text"] = raw_text
+    await upsert_entry(existing)
+    return True
 
 
 async def delete_entry(entry_id: str) -> bool:
-    """
-    Delete a JournalEntry from Weaviate by UUID.
-
-    Returns True if deleted, False if not found.
-    """
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        try:
-            collection.data.delete_by_id(uuid=entry_id)
-            logger.info(f"Deleted Weaviate entry {entry_id}.")
-            return True
-        except Exception as e:
-            logger.warning(f"delete_entry failed for {entry_id}: {e}")
-            return False
+    """Delete an entry by UUID. Returns True if deleted."""
+    async with get_session() as session:
+        result = await session.execute(text("""
+            DELETE FROM entry_embeddings WHERE entry_id = :entry_id
+        """), {"entry_id": entry_id})
+        await session.commit()
+        return result.rowcount > 0
 
 
 async def list_entries(limit: int = 20) -> list[dict[str, Any]]:
-    """
-    Return recent JournalEntry objects.
-
-    Args:
-        limit: Maximum number of entries.
-
-    Returns:
-        List of entry dicts.
-    """
-    client = _get_client()
-    with client:
-        collection = client.collections.get(JOURNAL_CLASS)
-        response = collection.query.fetch_objects(limit=limit)
+    """Return recent entries newest-first."""
+    async with get_session() as session:
+        rows = await session.execute(text("""
+            SELECT entry_id::text, user_id, raw_text, summary, categories,
+                   sentence_tags, entry_date
+            FROM entry_embeddings
+            ORDER BY entry_date DESC
+            LIMIT :limit
+        """), {"limit": limit})
         results = []
-        for obj in response.objects:
-            item = dict(obj.properties)
-            item["entry_id"] = str(obj.uuid)
+        for row in rows.mappings():
+            item = dict(row)
+            item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
             results.append(item)
         return results

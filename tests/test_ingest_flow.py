@@ -283,7 +283,7 @@ async def test_ingest_text_endpoint_success(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/ingest/text",
-            json={"text": SAMPLE_TEXT, "user_id": "test_user"},
+            json={"text": SAMPLE_TEXT},
         )
 
     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
@@ -332,6 +332,6 @@ async def test_ingest_text_empty_body_rejected(mock_langfuse, mock_weaviate_init
     from app.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/ingest/text", json={"user_id": "test_user"})
+        response = await client.post("/ingest/text", json={})
 
     assert response.status_code == 422
