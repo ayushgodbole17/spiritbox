@@ -153,7 +153,7 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local" \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\
@@ -161,7 +161,10 @@ jobs:
               ADMIN_PASSWORD=admin-password:latest,\
               WEAVIATE_API_KEY=weaviate-api-key:latest,\
               LANGFUSE_PUBLIC_KEY=langfuse-public-key:latest,\
-              LANGFUSE_SECRET_KEY=langfuse-secret-key:latest"
+              LANGFUSE_SECRET_KEY=langfuse-secret-key:latest,\
+              GOOGLE_CLIENT_ID=google-client-id:latest,\
+              GOOGLE_CLIENT_SECRET=google-client-secret:latest,\
+              JWT_SECRET=jwt-secret:latest"
 
   # ---------------------------------------------------------------------------
   # 5. Deploy Cloud Function

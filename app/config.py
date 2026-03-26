@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     EVAL_CLASSIFIER_THRESHOLD: float = Field(0.80, description="Min classifier precision to pass CI gate")
     EVAL_ENTITY_F1_THRESHOLD: float = Field(0.75, description="Min entity extractor F1 to pass CI gate")
 
+    # Google OAuth2
+    GOOGLE_CLIENT_ID: str = Field("", description="Google OAuth2 client ID")
+    GOOGLE_CLIENT_SECRET: str = Field("", description="Google OAuth2 client secret")
+    JWT_SECRET: str = Field("change-me-in-production", description="Secret key for signing JWTs")
+    JWT_ALGORITHM: str = Field("HS256", description="JWT signing algorithm")
+    JWT_EXPIRE_DAYS: int = Field(30, description="JWT expiry in days")
+    FRONTEND_URL: str = Field("http://localhost:5173", description="Frontend URL for OAuth redirect")
+
     # Firestore (kept for legacy reminder support during migration)
     FIRESTORE_COLLECTION_EVENTS: str = Field("events", description="Firestore collection name for events")
 

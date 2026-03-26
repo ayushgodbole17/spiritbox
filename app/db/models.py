@@ -26,6 +26,17 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    google_sub = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, nullable=False)
+    name = Column(String)
+    picture = Column(String)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+
 class Entry(Base):
     __tablename__ = "entries"
 

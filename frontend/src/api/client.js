@@ -1,5 +1,13 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
+function authHeaders(extra = {}) {
+  const token = localStorage.getItem('sb_token')
+  return {
+    ...extra,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 /**
  * POST /ingest/text
  * @param {string} text
@@ -8,8 +16,8 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 export async function ingestText(text, userId = 'default') {
   const res = await fetch(`${BASE}/ingest/text`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, user_id: userId }),
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ text }),
   })
   if (!res.ok) {
     const err = await res.text()
@@ -29,6 +37,7 @@ export async function ingestAudio(audioBlob) {
 
   const res = await fetch(`${BASE}/ingest/audio`, {
     method: 'POST',
+    headers: authHeaders(),
     body: form,
   })
   if (!res.ok) {
@@ -43,7 +52,7 @@ export async function ingestAudio(audioBlob) {
  * @param {number} limit
  */
 export async function getEntries(limit = 20) {
-  const res = await fetch(`${BASE}/entries?limit=${limit}`)
+  const res = await fetch(`${BASE}/entries?limit=${limit}`, { headers: authHeaders() })
   if (!res.ok) {
     const err = await res.text()
     throw new Error(err || `HTTP ${res.status}`)
@@ -59,7 +68,7 @@ export async function getEntries(limit = 20) {
 export async function updateEntry(entryId, rawText) {
   const res = await fetch(`${BASE}/entries/${entryId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ raw_text: rawText }),
   })
   if (!res.ok) {
@@ -74,7 +83,7 @@ export async function updateEntry(entryId, rawText) {
  * @param {string} entryId
  */
 export async function deleteEntry(entryId) {
-  const res = await fetch(`${BASE}/entries/${entryId}`, { method: 'DELETE' })
+  const res = await fetch(`${BASE}/entries/${entryId}`, { method: 'DELETE', headers: authHeaders() })
   if (!res.ok && res.status !== 204) {
     const err = await res.text()
     throw new Error(err || `HTTP ${res.status}`)
@@ -90,7 +99,7 @@ export async function deleteEntry(entryId) {
 export async function sendChat(message, history = [], topK = 5) {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ message, history, top_k: topK }),
   })
   if (!res.ok) {

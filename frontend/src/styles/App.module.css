@@ -51,9 +51,40 @@
 .headerSub {
   font-size: 11px;
   color: var(--text-3);
-  margin-left: auto;
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.04em;
+}
+
+.headerAuth {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.headerUser {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.headerSignIn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.headerSignOut {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
 }
 
 /* ─── Sidebar ─────────────────────────────────────────────────────────────── */

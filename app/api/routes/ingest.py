@@ -1,10 +1,11 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from app.agents.graph import run_entry_pipeline
+from app.api.deps import get_current_user
 from app.transcription.whisper import transcribe
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,6 @@ router = APIRouter()
 
 class TextEntryRequest(BaseModel):
     text: str
-    user_id: str = "default"
 
 
 class IngestResponse(BaseModel):
@@ -30,7 +30,7 @@ class IngestResponse(BaseModel):
 
 
 @router.post("/text", response_model=IngestResponse, summary="Ingest a text journal entry")
-async def ingest_text(request: TextEntryRequest) -> IngestResponse:
+async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_current_user)) -> IngestResponse:
     """
     Accepts a raw text journal entry, runs it through the agent pipeline,
     persists to Weaviate, and returns the structured output.
@@ -38,7 +38,7 @@ async def ingest_text(request: TextEntryRequest) -> IngestResponse:
     logger.info(f"Ingesting text entry for user={request.user_id}, length={len(request.text)}")
 
     try:
-        result = await run_entry_pipeline(request.text, user_id=request.user_id)
+        result = await run_entry_pipeline(request.text, user_id=user_id)
     except Exception as e:
         logger.error(f"Pipeline error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
@@ -59,7 +59,7 @@ async def ingest_text(request: TextEntryRequest) -> IngestResponse:
 @router.post("/audio", response_model=IngestResponse, summary="Ingest an audio journal entry")
 async def ingest_audio(
     file: UploadFile = File(..., description="Audio file (mp3, wav, m4a, etc.)"),
-    user_id: str = "default",
+    user_id: str = Depends(get_current_user),
 ) -> IngestResponse:
     """
     Accepts an audio file, transcribes it with Whisper, then runs the same

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ingest, entries, reminders, chat, admin
+from app.api.routes import ingest, entries, reminders, chat, admin, auth
 from app.memory.vector_store import init_schema
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(ingest.router, prefix="/ingest", tags=["Ingest"])
 app.include_router(entries.router, prefix="/entries", tags=["Entries"])
 app.include_router(reminders.router, prefix="/reminders", tags=["Reminders"])
