@@ -82,10 +82,11 @@ async def detect_intents(state: EntryState) -> EntryState:
         logger.debug("[intent_detector] cache hit")
         reminders = cached_reminders
         model_name = "cache"
+        prompt_version = "cache"
         cache_hit = True
     else:
         try:
-            messages = get_messages(
+            messages, prompt_version = get_messages(
                 name="spiritbox.detect_intent.v1",
                 fallback=[
                     {"role": "system", "content": INTENT_SYSTEM},
@@ -119,11 +120,13 @@ async def detect_intents(state: EntryState) -> EntryState:
             logger.warning(f"[intent_detector] JSON parse error: {exc}. No reminders scheduled.")
             reminders = []
             model_name = "error"
+            prompt_version = "error"
             cache_hit = False
         except Exception as exc:
             logger.error(f"[intent_detector] unexpected error: {exc}", exc_info=True)
             reminders = []
             model_name = "error"
+            prompt_version = "error"
             cache_hit = False
 
     processed_events = []
@@ -212,6 +215,7 @@ async def detect_intents(state: EntryState) -> EntryState:
         "events": merged_events,
         "model_used": {**state.get("model_used", {}), _NAMESPACE: model_name},
         "cache_hits": {**state.get("cache_hits", {}), _NAMESPACE: cache_hit},
+        "prompt_versions": {**state.get("prompt_versions", {}), _NAMESPACE: prompt_version},
     }
 
 

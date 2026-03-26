@@ -81,20 +81,22 @@ async def run():
     classifier_precisions = []
     entity_f1s = []
     per_entry = []
+    prompt_versions_seen: dict[str, set] = {}  # agent -> set of versions seen
 
     total = len(dataset)
     for i, item in enumerate(dataset, 1):
         print(f"  [{i}/{total}] {item['id']}...", end=" ", flush=True)
 
         state: EntryState = {
-            "raw_text":   item["text"],
-            "entities":   {},
-            "categories": [],
-            "events":     [],
-            "summary":    "",
-            "entry_id":   item["id"],
-            "model_used": {},
-            "cache_hits": {},
+            "raw_text":        item["text"],
+            "entities":        {},
+            "categories":      [],
+            "events":          [],
+            "summary":         "",
+            "entry_id":        item["id"],
+            "model_used":      {},
+            "cache_hits":      {},
+            "prompt_versions": {},
         }
 
         # --- Classifier ---
@@ -107,6 +109,10 @@ async def run():
         expected_cats = item["expected_categories"]
         cls_prec = _precision(predicted_cats, expected_cats)
         classifier_precisions.append(cls_prec)
+
+        # Track prompt versions used across the eval run
+        for agent, version in cls_result.get("prompt_versions", {}).items():
+            prompt_versions_seen.setdefault(agent, set()).add(version)
 
         # --- Entity extractor ---
         ent_result = await extract_entities(state)
@@ -122,6 +128,9 @@ async def run():
             entity_type_f1s.append(f1)
         entry_ent_f1 = sum(entity_type_f1s) / len(entity_type_f1s)
         entity_f1s.append(entry_ent_f1)
+
+        for agent, version in ent_result.get("prompt_versions", {}).items():
+            prompt_versions_seen.setdefault(agent, set()).add(version)
 
         per_entry.append({
             "id":                item["id"],
@@ -144,6 +153,14 @@ async def run():
     )
     run_at = datetime.now(timezone.utc).isoformat()
 
+    # Summarise which prompt versions were active: collapse each agent's set to a string
+    prompt_versions_summary = {
+        agent: sorted(versions)[0] if len(versions) == 1 else ",".join(sorted(versions))
+        for agent, versions in prompt_versions_seen.items()
+    }
+    # Single-string label for the eval run record (classifier version is most meaningful)
+    dominant_version = prompt_versions_summary.get("classifier", "unknown")
+
     results = {
         "run_at":               run_at,
         "classifier_precision": round(mean_cls_prec, 4),
@@ -153,6 +170,7 @@ async def run():
             "classifier_precision": mean_cls_prec >= thresholds["classifier_precision"],
             "entity_f1":            mean_ent_f1   >= thresholds["entity_f1"],
         },
+        "prompt_versions": prompt_versions_summary,
         "per_entry": per_entry,
     }
 
@@ -168,6 +186,7 @@ async def run():
             classifier_precision=round(mean_cls_prec, 4),
             entity_f1=round(mean_ent_f1, 4),
             passed=all_passed,
+            prompt_version=dominant_version,
         )
         print("  Eval run saved to PostgreSQL.")
     except Exception as exc:

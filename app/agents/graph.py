@@ -27,8 +27,9 @@ class EntryState(TypedDict):
     events: list
     summary: str
     entry_id: str
-    model_used: dict   # tracks which model tier ran each agent
-    cache_hits: dict   # tracks which agents hit the semantic cache
+    model_used: dict      # tracks which model tier ran each agent
+    cache_hits: dict      # tracks which agents hit the semantic cache
+    prompt_versions: dict # tracks which LangFuse prompt version each agent used
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +111,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
         "entry_id": entry_id,
         "model_used": {},
         "cache_hits": {},
+        "prompt_versions": {},
     }
 
     try:
@@ -124,6 +126,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
             "user_id": user_id,
             "model_used": result.get("model_used", {}),
             "cache_hits": result.get("cache_hits", {}),
+            "prompt_versions": result.get("prompt_versions", {}),
         },
     )
 
@@ -183,4 +186,5 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
         "summary": result["summary"],
         "model_used": result.get("model_used", {}),
         "cache_hits": result.get("cache_hits", {}),
+        "prompt_versions": result.get("prompt_versions", {}),
     }

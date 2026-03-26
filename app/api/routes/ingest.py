@@ -24,6 +24,9 @@ class IngestResponse(BaseModel):
     categories: list[dict[str, Any]]  # [{sentence, categories}, ...]
     entities: dict[str, Any]
     events: list[dict[str, Any]]
+    model_used: dict[str, Any] = {}
+    cache_hits: dict[str, Any] = {}
+    prompt_versions: dict[str, Any] = {}
 
 
 @router.post("/text", response_model=IngestResponse, summary="Ingest a text journal entry")
@@ -47,6 +50,9 @@ async def ingest_text(request: TextEntryRequest) -> IngestResponse:
         categories=result.get("categories", []),
         entities=result.get("entities", {}),
         events=result.get("events", []),
+        model_used=result.get("model_used", {}),
+        cache_hits=result.get("cache_hits", {}),
+        prompt_versions=result.get("prompt_versions", {}),
     )
 
 
@@ -87,4 +93,7 @@ async def ingest_audio(
         categories=result.get("categories", []),
         entities=result.get("entities", {}),
         events=result.get("events", []),
+        model_used=result.get("model_used", {}),
+        cache_hits=result.get("cache_hits", {}),
+        prompt_versions=result.get("prompt_versions", {}),
     )

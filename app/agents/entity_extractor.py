@@ -52,7 +52,7 @@ async def extract_entities(state: EntryState) -> EntryState:
         }
 
     try:
-        messages = get_messages(
+        messages, prompt_version = get_messages(
             name="spiritbox.extract_entities.v1",
             fallback=[
                 {"role": "system", "content": ENTITY_SYSTEM},
@@ -93,6 +93,7 @@ async def extract_entities(state: EntryState) -> EntryState:
             "events": events,
             "model_used": {**state.get("model_used", {}), _NAMESPACE: model_name},
             "cache_hits": {**state.get("cache_hits", {}), _NAMESPACE: False},
+            "prompt_versions": {**state.get("prompt_versions", {}), _NAMESPACE: prompt_version},
         }
 
     except json.JSONDecodeError as exc:

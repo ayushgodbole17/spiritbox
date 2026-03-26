@@ -62,10 +62,16 @@ def get_messages(
     name: str,
     fallback: list[dict],
     variables: dict[str, Any] | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], str]:
     """
     Fetch a chat prompt from LangFuse and compile it with variables.
     Falls back to local strings on any failure.
+
+    Respects the PROMPT_VARIANT setting for A/B routing:
+      - "production"  → stable prompts
+      - "staging"     → experimental prompts being tested
+      - "latest"      → most recently saved version
+      - "local"       → always use local fallback strings (skip LangFuse)
 
     Args:
         name:      LangFuse prompt name, e.g. "spiritbox.classify.v1"
@@ -74,16 +80,23 @@ def get_messages(
         variables: Dict of variables to substitute into the prompt.
 
     Returns:
-        List of {role, content} dicts ready to pass to the OpenAI API.
+        Tuple of (messages, version_string) where:
+          messages       — list of {role, content} dicts for the OpenAI API
+          version_string — e.g. "spiritbox.classify.v1@v3" or "local"
     """
+    from app.config import settings
+
     variables = variables or {}
+    variant = settings.PROMPT_VARIANT
+
     client = _client()
-    if client is not None:
+    if client is not None and variant != "local":
         try:
-            prompt = client.get_prompt(name, type="chat")
+            prompt = client.get_prompt(name, type="chat", label=variant)
             compiled = prompt.compile(**variables)
-            # LangFuse returns list of {role, content} dicts for chat prompts
-            return [{"role": m["role"], "content": m["content"]} for m in compiled]
+            version = f"{name}@v{prompt.version}"
+            messages = [{"role": m["role"], "content": m["content"]} for m in compiled]
+            return messages, version
         except Exception as e:
-            logger.warning(f"LangFuse prompt fetch failed for '{name}': {e}. Using local fallback.")
-    return _compile_fallback(fallback, variables)
+            logger.warning(f"LangFuse prompt fetch failed for '{name}' (label={variant}): {e}. Using local fallback.")
+    return _compile_fallback(fallback, variables), "local"

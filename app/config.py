@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     LLM_TIER_1: str = Field("gpt-4o-mini", description="Cheap/fast model tier (classifier, summarizer)")
     LLM_TIER_2: str = Field("gpt-4o", description="Accurate/expensive model tier (entity extractor, intent detector)")
 
+    # Prompt variant / A-B routing
+    # Set to "production" for stable prompts, "staging" for experimental.
+    # LangFuse will serve the prompt with this label; "local" skips LangFuse entirely.
+    PROMPT_VARIANT: str = Field("production", description="LangFuse prompt label to use (production | staging | latest)")
+
     # Semantic cache
     CACHE_SIMILARITY_THRESHOLD: float = Field(0.95, description="Cosine similarity threshold for cache hit")
     CACHE_MAX_SIZE: int = Field(500, description="Max number of entries in semantic cache")

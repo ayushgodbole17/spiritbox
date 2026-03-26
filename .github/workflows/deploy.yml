@@ -48,12 +48,50 @@ jobs:
         run: pytest tests/ -v --tb=short
 
   # ---------------------------------------------------------------------------
-  # 2. Build & push Docker image
+  # 2. Eval gate — blocks deploy if classifier precision or entity F1 drops
+  # ---------------------------------------------------------------------------
+  eval-gate:
+    name: Eval gate
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run eval harness
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          WEAVIATE_URL: http://localhost:8081
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/spiritbox
+          ADMIN_USERNAME: admin
+          ADMIN_PASSWORD: test-password
+          PROMPT_VARIANT: local
+        run: python evals/run_evals.py
+
+  # ---------------------------------------------------------------------------
+  # 3. Build & push Docker image
   # ---------------------------------------------------------------------------
   build:
     name: Build and push image
     runs-on: ubuntu-latest
-    needs: test
+    needs: eval-gate
     permissions:
       contents: read
       id-token: write
@@ -83,7 +121,7 @@ jobs:
           docker push ${{ env.IMAGE_NAME }}:latest
 
   # ---------------------------------------------------------------------------
-  # 3. Deploy to Cloud Run
+  # 4. Deploy to Cloud Run
   # ---------------------------------------------------------------------------
   deploy-api:
     name: Deploy API to Cloud Run
@@ -126,7 +164,7 @@ jobs:
               LANGFUSE_SECRET_KEY=langfuse-secret-key:latest"
 
   # ---------------------------------------------------------------------------
-  # 4. Deploy Cloud Function
+  # 5. Deploy Cloud Function
   # ---------------------------------------------------------------------------
   deploy-function:
     name: Deploy send_reminder Cloud Function
