@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pythonjsonlogger.json import JsonFormatter
 
 from app.api.routes import ingest, entries, reminders, chat, admin, auth
-from app.memory.vector_store import init_schema
+from app.memory.vector_store import init_schema, backfill_from_entries
 from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
 
 # --- Structured JSON logging with correlation ID ---
@@ -37,6 +37,13 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL tables ready.")
     except Exception as e:
         logger.warning(f"PostgreSQL table creation failed (non-fatal): {e}")
+    # Backfill any entries missing from entry_embeddings (e.g. after Weaviate migration)
+    try:
+        count = await backfill_from_entries()
+        if count:
+            logger.info(f"Backfilled {count} entries into pgvector.")
+    except Exception as e:
+        logger.warning(f"Embedding backfill failed (non-fatal): {e}")
     yield
     logger.info("Spiritbox shutting down.")
 

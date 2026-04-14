@@ -233,3 +233,44 @@ async def list_entries(limit: int = 20) -> list[dict[str, Any]]:
             item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
             results.append(item)
         return results
+
+
+# ---------------------------------------------------------------------------
+# Backfill — populate entry_embeddings from the entries table
+# ---------------------------------------------------------------------------
+
+async def backfill_from_entries() -> int:
+    """
+    Read all entries from PostgreSQL that are missing from entry_embeddings
+    and create embeddings for them. Returns the number of entries backfilled.
+    """
+    from sqlalchemy import text as sa_text
+
+    async with get_session() as session:
+        rows = await session.execute(sa_text("""
+            SELECT e.id::text AS entry_id, e.user_id, e.raw_text, e.summary
+            FROM entries e
+            LEFT JOIN entry_embeddings ee ON ee.entry_id = e.id
+            WHERE ee.entry_id IS NULL
+            ORDER BY e.created_at ASC
+        """))
+        missing = rows.mappings().all()
+
+    count = 0
+    for row in missing:
+        try:
+            await upsert_entry({
+                "entry_id": row["entry_id"],
+                "raw_text": row["raw_text"] or "",
+                "summary": row["summary"] or "",
+                "categories": [],
+                "sentence_tags": "[]",
+                "user_id": row["user_id"] or "default",
+            })
+            count += 1
+            logger.info(f"[backfill] embedded entry {row['entry_id']}")
+        except Exception as exc:
+            logger.warning(f"[backfill] failed for {row['entry_id']}: {exc}")
+
+    logger.info(f"[backfill] complete: {count} entries embedded.")
+    return count

@@ -292,6 +292,20 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
         return {"error": str(exc)}
 
 
+@router.post("/backfill-embeddings")
+async def backfill_embeddings(_: str = Depends(require_admin)) -> dict:
+    """
+    Backfill entry_embeddings from the entries table.
+
+    Reads all entries from PostgreSQL that don't yet have a corresponding
+    row in entry_embeddings and creates embeddings for them via pgvector.
+    Runs synchronously and returns the count when done.
+    """
+    from app.memory.vector_store import backfill_from_entries
+    count = await backfill_from_entries()
+    return {"status": "done", "backfilled": count}
+
+
 @router.get("/costs")
 async def get_costs(_: str = Depends(require_admin)) -> dict:
     """Aggregate token usage and estimated cost from recent entries."""
