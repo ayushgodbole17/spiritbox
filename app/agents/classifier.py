@@ -9,19 +9,17 @@ import logging
 
 from langfuse import observe
 
+from pydantic import ValidationError
+
 from app.agents.graph import EntryState
+from app.agents.schemas import ClassificationResult
+from app.llm.guardrails import validate_llm_output
 from app.llm.router import chat_completion, TIER_1
 from app.llm.cache import get_cached, set_cached
 from app.prompts.classify import SYSTEM as CLASSIFY_SYSTEM, USER_TEMPLATE as CLASSIFY_USER
 from app.prompts.loader import get_messages
 
 logger = logging.getLogger(__name__)
-
-VALID_CATEGORIES = {
-    "health", "mental_health", "finances", "work", "music",
-    "relationships", "travel", "food", "fitness", "learning",
-    "hobbies", "family", "other",
-}
 
 _NAMESPACE = "classifier"
 
@@ -69,28 +67,22 @@ async def classify_sentences(state: EntryState) -> EntryState:
             temperature=0,
         )
         raw = response.choices[0].message.content or "{}"
-        parsed = json.loads(raw)
 
-        # Accept {"classifications": [...]} wrapper, any other list-valued key, or a bare array
-        if isinstance(parsed, list):
-            classifications = parsed
-        else:
-            classifications = (
-                parsed.get("classifications")
-                or next((v for v in parsed.values() if isinstance(v, list)), [])
-            )
+        # Normalise: wrap bare arrays in {"classifications": [...]}
+        try:
+            pre = json.loads(raw)
+        except json.JSONDecodeError:
+            pre = {}
+        if isinstance(pre, list):
+            raw = json.dumps({"classifications": pre})
+        elif isinstance(pre, dict) and "classifications" not in pre:
+            for v in pre.values():
+                if isinstance(v, list):
+                    raw = json.dumps({"classifications": v})
+                    break
 
-        # Validate and sanitise each entry
-        sanitised = []
-        for item in classifications:
-            if not isinstance(item, dict):
-                continue
-            sentence = str(item.get("sentence", ""))
-            raw_cats = item.get("categories", [])
-            cats = [c for c in raw_cats if isinstance(c, str) and c in VALID_CATEGORIES]
-            if not cats:
-                cats = ["other"]
-            sanitised.append({"sentence": sentence, "categories": cats})
+        validated = await validate_llm_output(raw, ClassificationResult)
+        sanitised = [item.model_dump() for item in validated.classifications]
 
         logger.debug(f"[classifier] classified {len(sanitised)} sentences.")
         await set_cached(raw_text, sanitised, namespace=_NAMESPACE)
@@ -102,8 +94,8 @@ async def classify_sentences(state: EntryState) -> EntryState:
             "prompt_versions": {**state.get("prompt_versions", {}), _NAMESPACE: prompt_version},
         }
 
-    except json.JSONDecodeError as exc:
-        logger.warning(f"[classifier] JSON parse error: {exc}. Returning empty list.")
+    except (json.JSONDecodeError, ValidationError) as exc:
+        logger.warning(f"[classifier] output validation failed: {exc}. Returning empty list.")
         return {**state, "categories": []}
     except Exception as exc:
         logger.error(f"[classifier] unexpected error: {exc}", exc_info=True)

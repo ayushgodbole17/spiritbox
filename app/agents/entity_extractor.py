@@ -9,15 +9,17 @@ import logging
 
 from langfuse import observe
 
+from pydantic import ValidationError
+
 from app.agents.graph import EntryState
+from app.agents.schemas import EntityResult
+from app.llm.guardrails import validate_llm_output
 from app.llm.router import chat_completion, TIER_2
 from app.llm.cache import get_cached, set_cached
 from app.prompts.extract_entities import SYSTEM as ENTITY_SYSTEM, USER_TEMPLATE as ENTITY_USER
 from app.prompts.loader import get_messages
 
 logger = logging.getLogger(__name__)
-
-ALLOWED_KEYS = {"people", "places", "dates", "events", "amounts", "organizations"}
 
 _NAMESPACE = "entity_extractor"
 
@@ -67,20 +69,9 @@ async def extract_entities(state: EntryState) -> EntryState:
             temperature=0,
         )
         raw = response.choices[0].message.content or "{}"
-        parsed = json.loads(raw)
 
-        # Strip any keys not in our schema
-        entities = {k: v for k, v in parsed.items() if k in ALLOWED_KEYS}
-
-        # Ensure list fields are actually lists
-        for key in ("people", "places", "dates", "organizations"):
-            if key in entities and not isinstance(entities[key], list):
-                entities[key] = []
-        if "events" in entities and not isinstance(entities["events"], list):
-            entities["events"] = []
-        if "amounts" in entities and not isinstance(entities["amounts"], list):
-            entities["amounts"] = []
-
+        validated = await validate_llm_output(raw, EntityResult)
+        entities = validated.model_dump()
         events = entities.get("events", [])
         logger.debug(
             f"[entity_extractor] extracted {len(entities)} entity types, "
@@ -96,8 +87,8 @@ async def extract_entities(state: EntryState) -> EntryState:
             "prompt_versions": {**state.get("prompt_versions", {}), _NAMESPACE: prompt_version},
         }
 
-    except json.JSONDecodeError as exc:
-        logger.warning(f"[entity_extractor] JSON parse error: {exc}. Returning empty dict.")
+    except (json.JSONDecodeError, ValidationError) as exc:
+        logger.warning(f"[entity_extractor] output validation failed: {exc}. Returning empty dict.")
         return {**state, "entities": {}, "events": []}
     except Exception as exc:
         logger.error(f"[entity_extractor] unexpected error: {exc}", exc_info=True)

@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from langfuse import observe
+from pydantic import ValidationError
 
 from app.agents.graph import EntryState
+from app.agents.schemas import ReminderResult
 from app.config import settings
+from app.llm.guardrails import validate_llm_output
 from app.llm.router import chat_completion, TIER_2
 from app.llm.cache import get_cached, set_cached
 from app.prompts.detect_intent import SYSTEM as INTENT_SYSTEM, USER_TEMPLATE as INTENT_USER
@@ -105,19 +108,23 @@ async def detect_intents(state: EntryState) -> EntryState:
                 temperature=0,
             )
             raw = response.choices[0].message.content or "{}"
-            parsed = json.loads(raw)
 
-            # Accept {"reminders": [...]} wrapper or bare array
-            if isinstance(parsed, list):
-                reminders = parsed
-            else:
-                reminders = parsed.get("reminders", [])
+            # Normalise: wrap bare arrays in {"reminders": [...]}
+            try:
+                pre = json.loads(raw)
+            except json.JSONDecodeError:
+                pre = {}
+            if isinstance(pre, list):
+                raw = json.dumps({"reminders": pre})
+
+            validated = await validate_llm_output(raw, ReminderResult)
+            reminders = [r.model_dump() for r in validated.reminders]
 
             await set_cached(cache_key, reminders, namespace=_NAMESPACE)
             cache_hit = False
 
-        except json.JSONDecodeError as exc:
-            logger.warning(f"[intent_detector] JSON parse error: {exc}. No reminders scheduled.")
+        except (json.JSONDecodeError, ValidationError) as exc:
+            logger.warning(f"[intent_detector] output validation failed: {exc}. No reminders scheduled.")
             reminders = []
             model_name = "error"
             prompt_version = "error"
