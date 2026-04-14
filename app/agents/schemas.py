@@ -7,6 +7,8 @@ they propagate through the pipeline.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, field_validator
 
 
@@ -44,8 +46,8 @@ class EntityResult(BaseModel):
     people: list[str] = []
     places: list[str] = []
     dates: list[str] = []
-    events: list[dict] = []
-    amounts: list[str] = []
+    events: list[Any] = []
+    amounts: list[Any] = []
     organizations: list[str] = []
 
 

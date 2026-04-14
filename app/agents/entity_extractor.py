@@ -71,7 +71,7 @@ async def extract_entities(state: EntryState) -> EntryState:
         raw = response.choices[0].message.content or "{}"
 
         validated = await validate_llm_output(raw, EntityResult)
-        entities = validated.model_dump()
+        entities = {k: v for k, v in validated.model_dump().items() if v}
         events = entities.get("events", [])
         logger.debug(
             f"[entity_extractor] extracted {len(entities)} entity types, "
