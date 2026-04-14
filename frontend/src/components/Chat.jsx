@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { sendChat } from '../api/client.js'
+import { sendChatStream } from '../api/client.js'
 import styles from '../styles/components.module.css'
 
 export default function Chat() {
@@ -23,13 +23,43 @@ export default function Chat() {
     setInput('')
     setLoading(true)
 
+    // Add a placeholder assistant message that we'll stream into
+    const assistantIdx = next.length
+    const withPlaceholder = [...next, { role: 'assistant', content: '', sources: [] }]
+    setMessages(withPlaceholder)
+
     try {
-      // Build history for context (exclude source metadata)
       const history = next.map(m => ({ role: m.role, content: m.content }))
-      const data = await sendChat(text, history.slice(0, -1)) // last msg is the current one
-      setMessages([...next, { role: 'assistant', content: data.answer, sources: data.sources }])
+      const { sources } = await sendChatStream(
+        text,
+        history.slice(0, -1),
+        (token) => {
+          // Append each token to the assistant message
+          setMessages(prev => {
+            const updated = [...prev]
+            updated[assistantIdx] = {
+              ...updated[assistantIdx],
+              content: updated[assistantIdx].content + token,
+            }
+            return updated
+          })
+        },
+      )
+      // Attach sources once stream completes
+      setMessages(prev => {
+        const updated = [...prev]
+        updated[assistantIdx] = { ...updated[assistantIdx], sources }
+        return updated
+      })
     } catch (err) {
-      setMessages([...next, { role: 'assistant', content: `Sorry, something went wrong: ${err.message}`, sources: [] }])
+      setMessages(prev => {
+        const updated = [...prev]
+        updated[assistantIdx] = {
+          ...updated[assistantIdx],
+          content: `Sorry, something went wrong: ${err.message}`,
+        }
+        return updated
+      })
     } finally {
       setLoading(false)
     }
@@ -57,7 +87,7 @@ export default function Chat() {
             {msg.role === 'assistant' && (
               <div className={styles.chatAvatar}>✦</div>
             )}
-            <div className={`${styles.chatBubble} ${msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant}`}>
+            <div className={`${styles.chatBubble} ${msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant} ${loading && msg.role === 'assistant' && i === messages.length - 1 ? styles.chatBubbleStreaming : ''}`}>
               <p className={styles.chatBubbleText}>{msg.content}</p>
               {msg.sources && msg.sources.length > 0 && (
                 <div className={styles.chatSources}>
@@ -73,7 +103,7 @@ export default function Chat() {
           </div>
         ))}
 
-        {loading && (
+        {loading && messages.length > 0 && messages[messages.length - 1].content === '' && (
           <div className={styles.chatBubbleRow}>
             <div className={styles.chatAvatar}>✦</div>
             <div className={`${styles.chatBubble} ${styles.chatBubbleAssistant} ${styles.chatBubbleThinking}`}>

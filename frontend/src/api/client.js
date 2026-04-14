@@ -110,6 +110,54 @@ export async function sendChat(message, history = [], topK = 5) {
 }
 
 /**
+ * POST /chat/stream — SSE streaming variant of sendChat.
+ * Calls onToken(string) for each token, returns final { sources } on completion.
+ * @param {string} message
+ * @param {Array<{role: string, content: string}>} history
+ * @param {(token: string) => void} onToken
+ * @param {number} topK
+ * @returns {Promise<{sources: Array}>}
+ */
+export async function sendChatStream(message, history = [], onToken, topK = 5) {
+  const res = await fetch(`${BASE}/chat/stream`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ message, history, top_k: topK }),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || `HTTP ${res.status}`)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let sources = []
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    // Parse SSE lines
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // keep incomplete line in buffer
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const evt = JSON.parse(line.slice(6))
+        if (evt.done) {
+          sources = evt.sources || []
+        } else if (evt.token) {
+          onToken(evt.token)
+        }
+      } catch { /* ignore malformed lines */ }
+    }
+  }
+  return { sources }
+}
+
+/**
  * GET /reminders
  */
 export async function getReminders() {

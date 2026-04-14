@@ -16,7 +16,7 @@ from datetime import datetime
 
 from langfuse import observe
 
-from app.llm.router import chat_completion, TIER_2
+from app.llm.router import chat_completion, chat_completion_stream, TIER_2
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +119,50 @@ async def chat(
             for s in sources
         ],
     }
+
+
+@observe()
+async def chat_stream(
+    message: str,
+    history: list[dict] | None = None,
+    top_k: int = 5,
+):
+    """
+    Streaming variant of chat(). Yields (token, sources_or_none) tuples.
+    The final yield has token="" and includes the sources list.
+    """
+    from app.memory.vector_store import semantic_search
+
+    try:
+        sources = await semantic_search(message, limit=top_k)
+    except Exception as exc:
+        logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
+        sources = []
+
+    context = _build_context(sources)
+    system_content = SYSTEM_PROMPT.format(context=context)
+    messages = [{"role": "system", "content": system_content}]
+    if history:
+        messages.extend(history[-10:])
+    messages.append({"role": "user", "content": message})
+
+    source_list = [
+        {
+            "entry_id": s.get("entry_id", ""),
+            "entry_date": s.get("entry_date", ""),
+            "summary": s.get("summary", ""),
+            "score": s.get("score"),
+        }
+        for s in sources
+    ]
+
+    token_iter, model_used = await chat_completion_stream(
+        tier=TIER_2,
+        messages=messages,
+        temperature=0.4,
+    )
+    async for token in token_iter:
+        yield token, None
+
+    logger.debug(f"[chat_agent] stream complete ({len(source_list)} sources, model={model_used})")
+    yield "", source_list

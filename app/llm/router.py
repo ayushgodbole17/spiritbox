@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -97,3 +98,41 @@ async def chat_completion(
     )
     logger.info(f"[router] Cascade: used {fallback_model} (original tier: {tier})")
     return response, fallback_model
+
+
+async def chat_completion_stream(
+    tier: str,
+    messages: list[dict],
+    temperature: float = 0,
+    **kwargs: Any,
+) -> tuple[AsyncIterator[str], str]:
+    """
+    Streaming variant of chat_completion(). Returns an async iterator of
+    content-delta strings plus the model name used.
+
+    Falls back from Tier 1 -> Tier 2 on error (same as non-streaming).
+    """
+    client = AsyncOpenAI()
+    primary_model = _MODEL_MAP.get(tier, settings.LLM_TIER_2)
+    fallback_model = settings.LLM_TIER_2
+
+    async def _stream(model: str) -> AsyncIterator[str]:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            stream=True,
+            **kwargs,
+        )
+        async for chunk in response:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                yield delta
+
+    try:
+        return _stream(primary_model), primary_model
+    except Exception as exc:
+        logger.warning(
+            f"[router] {primary_model} stream failed ({exc}) — cascading to {fallback_model}"
+        )
+        return _stream(fallback_model), fallback_model
