@@ -2,7 +2,7 @@
 RAG Chat Agent — answers questions about past journal entries.
 
 Flow:
-  1. Retrieve the top-k most semantically relevant entries from Weaviate
+  1. Retrieve the top-k most semantically relevant entries via pgvector
   2. Build a context block from those entries (summary + raw_text + date)
   3. Call GPT-4o with the context + conversation history + user question
   4. Return the answer and the source entries used
@@ -70,7 +70,7 @@ async def chat(
     Args:
         message: The user's question or message.
         history: Prior conversation turns as [{role, content}] dicts.
-        top_k:   Number of entries to retrieve from Weaviate.
+        top_k:   Number of entries to retrieve via pgvector.
 
     Returns:
         dict with keys:
@@ -83,7 +83,7 @@ async def chat(
     try:
         sources = await semantic_search(message, limit=top_k)
     except Exception as exc:
-        logger.warning(f"[chat_agent] Weaviate search failed: {exc}. Proceeding without context.")
+        logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
         sources = []
 
     # 2. Build messages

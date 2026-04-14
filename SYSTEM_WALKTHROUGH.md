@@ -18,7 +18,7 @@ LangGraph pipeline (4 agents in sequence)
     │       ↓ yes → Firestore (save event) + Cloud Scheduler (book the job)
     └── Summarizer        (GPT-4o)  → 2–3 sentence digest
     ↓
-Weaviate (store entry + vector embedding for future semantic search)
+pgvector (store entry + vector embedding for future semantic search)
     ↓
 JSON response → frontend renders result
 
@@ -171,11 +171,11 @@ This will also be downgraded to **GPT-4o-mini** in v2 since summarising doesn't 
 
 ---
 
-### Step 9 — The entry is stored in Weaviate
+### Step 9 — The entry is stored in pgvector
 
 **File:** `app/memory/vector_store.py`
 
-After the pipeline completes, the result is saved to **Weaviate** — a vector database.
+After the pipeline completes, the result is saved to **pgvector** — the PostgreSQL vector extension that turns our existing database into a vector store.
 
 "Vector" means each entry is also stored as a list of ~1,500 numbers that mathematically encode the *meaning* of the text. This is called an **embedding**. Two pieces of text about similar topics will have embeddings that are numerically close to each other.
 
@@ -239,7 +239,7 @@ This separation is the core of what makes it a proper **LLMOps** system rather t
 | GPT-4o | Large language model | Running all 4 agents |
 | GPT-4o-mini | Cheaper/faster LLM (v2) | Classifier and Summarizer agents |
 | LangGraph | Agent orchestration framework | Running agents in sequence, managing state |
-| Weaviate | Vector database | Storing entries + semantic search |
+| pgvector | PostgreSQL vector extension | Storing entries + semantic search |
 | Firestore | Google's NoSQL cloud database | Storing scheduled events/reminders |
 | Cloud Scheduler | GCP cron-style job scheduler | Booking reminder jobs at exact times |
 | Cloud Functions | Serverless compute (GCP) | The code that actually fires the reminder |

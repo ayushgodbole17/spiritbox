@@ -41,7 +41,6 @@ jobs:
           OPENAI_API_KEY: test-key
           LANGFUSE_PUBLIC_KEY: test-pub
           LANGFUSE_SECRET_KEY: test-sec
-          WEAVIATE_URL: http://localhost:8081
           DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/spiritbox
           ADMIN_USERNAME: admin
           ADMIN_PASSWORD: test-password
@@ -78,7 +77,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          WEAVIATE_URL: http://localhost:8081
           DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/spiritbox
           ADMIN_USERNAME: admin
           ADMIN_PASSWORD: test-password
@@ -153,13 +151,12 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},WEAVIATE_URL=https://tak7r6r4qjk1cvgtumoyaw.c0.asia-southeast1.gcp.weaviate.cloud,LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app" \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\
               ADMIN_USERNAME=admin-username:latest,\
               ADMIN_PASSWORD=admin-password:latest,\
-              WEAVIATE_API_KEY=weaviate-api-key:latest,\
               LANGFUSE_PUBLIC_KEY=langfuse-public-key:latest,\
               LANGFUSE_SECRET_KEY=langfuse-secret-key:latest,\
               GOOGLE_CLIENT_ID=google-client-id:latest,\

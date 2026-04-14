@@ -7,7 +7,7 @@ A production-grade personal AI agent for journaling and life management.
 Phase 1 implements the end-to-end ingest pipeline:
 
 ```
-Audio/Text → Whisper (audio only) → LangGraph pipeline → Weaviate (vector store)
+Audio/Text → Whisper (audio only) → LangGraph pipeline → pgvector (vector store)
                                           |
                     entity_extractor → classifier → intent_detector → summarizer
 ```
@@ -30,7 +30,7 @@ spiritbox/
       intent_detector.py   (stub)
       summarizer.py        (stub)
     memory/
-      vector_store.py    Weaviate client
+      vector_store.py    pgvector client
       buffer.py          Conversation buffer (LangChain)
     scheduler/
       create_job.py      GCP Cloud Scheduler wrapper
@@ -64,13 +64,7 @@ cp .env.example .env
 # Edit .env with your API keys
 ```
 
-### 3. Start Weaviate (Docker)
-
-```bash
-docker-compose up weaviate -d
-```
-
-### 4. Run the API
+### 3. Run the API
 
 ```bash
 uvicorn app.main:app --reload --port 8080
@@ -78,7 +72,7 @@ uvicorn app.main:app --reload --port 8080
 
 API docs: http://localhost:8080/docs
 
-### 5. Run tests
+### 4. Run tests
 
 ```bash
 pytest tests/ -v
@@ -86,7 +80,7 @@ pytest tests/ -v
 
 ## Docker
 
-Run the full stack (API + Weaviate):
+Run the full stack (API + PostgreSQL/pgvector + frontend):
 
 ```bash
 docker-compose up --build
@@ -124,4 +118,4 @@ Set the following GitHub secrets:
 ## Roadmap
 
 - **Phase 2**: Wire real LLM calls into all four agents using the prompt templates in `app/prompts/`.
-- **Phase 3**: Add conversational interface, proactive nudges, mobile push notifications.
+- **Phase 3**: Model routing, semantic cache, streaming chat, guardrails, hybrid search.

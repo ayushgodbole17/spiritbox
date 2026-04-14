@@ -36,7 +36,7 @@ async def search_entries(
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(5, ge=1, le=20),
 ) -> SearchResponse:
-    """Semantic (vector) search via Weaviate — returns entries with relevance scores."""
+    """Semantic (vector) search via pgvector — returns entries with relevance scores."""
     try:
         from app.memory.vector_store import semantic_search
         results = await semantic_search(query=q, limit=limit)
@@ -63,15 +63,15 @@ async def get_entry_by_id(entry_id: str) -> dict[str, Any]:
 async def update_entry_by_id(entry_id: str, body: UpdateEntryRequest) -> dict[str, Any]:
     try:
         from app.db.crud import update_entry as pg_update
-        from app.memory.vector_store import update_entry as wv_update
+        from app.memory.vector_store import update_entry as vs_update
         found = await pg_update(entry_id, body.raw_text)
         if not found:
             raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
-        # Best-effort Weaviate sync
+        # Best-effort pgvector sync
         try:
-            await wv_update(entry_id, body.raw_text)
+            await vs_update(entry_id, body.raw_text)
         except Exception as e:
-            logger.warning(f"Weaviate update failed for {entry_id} (non-fatal): {e}")
+            logger.warning(f"pgvector update failed for {entry_id} (non-fatal): {e}")
     except HTTPException:
         raise
     except Exception as e:
@@ -84,15 +84,15 @@ async def update_entry_by_id(entry_id: str, body: UpdateEntryRequest) -> dict[st
 async def delete_entry_by_id(entry_id: str) -> None:
     try:
         from app.db.crud import delete_entry as pg_delete
-        from app.memory.vector_store import delete_entry as wv_delete
+        from app.memory.vector_store import delete_entry as vs_delete
         found = await pg_delete(entry_id)
         if not found:
             raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
-        # Best-effort Weaviate sync
+        # Best-effort pgvector sync
         try:
-            await wv_delete(entry_id)
+            await vs_delete(entry_id)
         except Exception as e:
-            logger.warning(f"Weaviate delete failed for {entry_id} (non-fatal): {e}")
+            logger.warning(f"pgvector delete failed for {entry_id} (non-fatal): {e}")
     except HTTPException:
         raise
     except Exception as e:

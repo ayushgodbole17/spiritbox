@@ -2,7 +2,7 @@
 LangGraph supervisor that orchestrates the four Phase-2 agents:
   entity_extractor -> classifier -> intent_detector -> summarizer -> END
 
-After the graph completes, run_entry_pipeline() saves the entry to Weaviate
+After the graph completes, run_entry_pipeline() saves the entry to pgvector
 via app/memory/vector_store.upsert_entry().
 """
 import json
@@ -92,7 +92,7 @@ _compiled_graph = _build_graph().compile()
 @observe()
 async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
     """
-    Runs the full agent pipeline for a journal entry, then saves to Weaviate.
+    Runs the full agent pipeline for a journal entry, then saves to pgvector.
 
     Args:
         text:    Raw journal entry text.
@@ -132,7 +132,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
 
     categories = result.get("categories", [])
 
-    # Flatten categories for Weaviate storage
+    # Flatten categories for storage
     flat_categories: list[str] = []
     seen: set[str] = set()
     for item in categories:
@@ -161,7 +161,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
     except Exception as e:
         logger.warning(f"[graph] PostgreSQL save failed (non-fatal): {e}")
 
-    # Persist to Weaviate (vectors + semantic search)
+    # Persist to pgvector (vectors + semantic search)
     try:
         from app.memory.vector_store import upsert_entry
         await upsert_entry(
@@ -174,9 +174,9 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
                 "user_id": user_id,
             }
         )
-        logger.info(f"[graph] Entry {entry_id} upserted to Weaviate.")
+        logger.info(f"[graph] Entry {entry_id} upserted to pgvector.")
     except Exception as e:
-        logger.warning(f"[graph] Weaviate upsert failed (non-fatal): {e}")
+        logger.warning(f"[graph] pgvector upsert failed (non-fatal): {e}")
 
     return {
         "entry_id": result["entry_id"],

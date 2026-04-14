@@ -17,9 +17,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Spiritbox...")
     try:
         await init_schema()
-        logger.info("Weaviate schema initialized successfully.")
+        logger.info("pgvector schema initialized successfully.")
     except Exception as e:
-        logger.warning(f"Weaviate schema initialization failed (non-fatal): {e}")
+        logger.warning(f"pgvector schema initialization failed (non-fatal): {e}")
     try:
         from app.db.session import create_tables
         await create_tables()

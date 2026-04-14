@@ -33,7 +33,7 @@ class IngestResponse(BaseModel):
 async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_current_user)) -> IngestResponse:
     """
     Accepts a raw text journal entry, runs it through the agent pipeline,
-    persists to Weaviate, and returns the structured output.
+    persists to pgvector, and returns the structured output.
     """
     logger.info(f"Ingesting text entry for user={user_id}, length={len(request.text)}")
 

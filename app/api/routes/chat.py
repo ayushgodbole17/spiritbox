@@ -40,7 +40,7 @@ async def chat_endpoint(req: ChatRequest):
     """
     Answer a question about past journal entries using RAG.
 
-    - Retrieves the top-k most relevant entries from Weaviate
+    - Retrieves the top-k most relevant entries via pgvector
     - Feeds them as context to GPT-4o along with conversation history
     - Returns the answer and the source entries used
     """
