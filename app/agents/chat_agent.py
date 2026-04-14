@@ -2,7 +2,7 @@
 RAG Chat Agent — answers questions about past journal entries.
 
 Flow:
-  1. Retrieve the top-k most semantically relevant entries via pgvector
+  1. Retrieve the top-k entries via hybrid search (semantic + keyword with RRF)
   2. Build a context block from those entries (summary + raw_text + date)
   3. Call GPT-4o with the context + conversation history + user question
   4. Return the answer and the source entries used
@@ -77,11 +77,11 @@ async def chat(
           - answer: str
           - sources: list of entry dicts used as context
     """
-    from app.memory.vector_store import semantic_search
+    from app.memory.vector_store import hybrid_search
 
     # 1. Retrieve relevant entries
     try:
-        sources = await semantic_search(message, limit=top_k)
+        sources = await hybrid_search(message, limit=top_k)
     except Exception as exc:
         logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
         sources = []
@@ -131,10 +131,10 @@ async def chat_stream(
     Streaming variant of chat(). Yields (token, sources_or_none) tuples.
     The final yield has token="" and includes the sources list.
     """
-    from app.memory.vector_store import semantic_search
+    from app.memory.vector_store import hybrid_search
 
     try:
-        sources = await semantic_search(message, limit=top_k)
+        sources = await hybrid_search(message, limit=top_k)
     except Exception as exc:
         logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
         sources = []

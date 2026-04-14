@@ -31,18 +31,26 @@ async def get_entries(
         raise HTTPException(status_code=500, detail=f"Failed to list entries: {e}")
 
 
-@router.get("/search", summary="Semantic search over journal entries")
+@router.get("/search", summary="Search over journal entries")
 async def search_entries(
     q: str = Query(..., description="Natural language search query"),
     limit: int = Query(5, ge=1, le=20),
+    mode: str = Query("hybrid", description="Search mode: semantic, keyword, or hybrid"),
 ) -> SearchResponse:
-    """Semantic (vector) search via pgvector — returns entries with relevance scores."""
+    """Search journal entries via semantic (vector), keyword (full-text), or hybrid (RRF fusion)."""
     try:
-        from app.memory.vector_store import semantic_search
-        results = await semantic_search(query=q, limit=limit)
+        if mode == "keyword":
+            from app.memory.vector_store import keyword_search
+            results = await keyword_search(query=q, limit=limit)
+        elif mode == "semantic":
+            from app.memory.vector_store import semantic_search
+            results = await semantic_search(query=q, limit=limit)
+        else:
+            from app.memory.vector_store import hybrid_search
+            results = await hybrid_search(query=q, limit=limit)
         return SearchResponse(results=results, query=q)
     except Exception as e:
-        logger.error(f"Semantic search failed: {e}", exc_info=True)
+        logger.error(f"Search failed (mode={mode}): {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Search failed: {e}")
 
 

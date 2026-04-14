@@ -76,6 +76,18 @@ async def init_schema() -> None:
             USING ivfflat (embedding vector_cosine_ops)
             WITH (lists = 100)
         """))
+        # Full-text search: generated tsvector column + GIN index
+        await conn.execute(text("""
+            ALTER TABLE entry_embeddings
+            ADD COLUMN IF NOT EXISTS fts tsvector
+            GENERATED ALWAYS AS (
+                to_tsvector('english', coalesce(raw_text, '') || ' ' || coalesce(summary, ''))
+            ) STORED
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS entry_embeddings_fts_idx
+            ON entry_embeddings USING gin (fts)
+        """))
     logger.info("pgvector schema ready.")
 
 
@@ -179,6 +191,108 @@ async def semantic_search(query: str, limit: int = 5, user_id: str | None = None
             item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
             results.append(item)
         return results
+
+
+async def keyword_search(query: str, limit: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
+    """
+    Full-text keyword search using PostgreSQL tsvector/GIN index.
+
+    Args:
+        query:   Natural language search string.
+        limit:   Max results.
+        user_id: If set, filter to this user's entries only.
+
+    Returns:
+        List of entry dicts with a 'score' field (ts_rank).
+    """
+    filter_clause = "AND user_id = :user_id" if user_id else ""
+    params: dict = {"query": query, "limit": limit}
+    if user_id:
+        params["user_id"] = user_id
+
+    async with get_session() as session:
+        rows = await session.execute(text(f"""
+            SELECT
+                entry_id::text,
+                user_id,
+                raw_text,
+                summary,
+                categories,
+                sentence_tags,
+                entry_date,
+                ts_rank(fts, websearch_to_tsquery('english', :query)) AS score
+            FROM entry_embeddings
+            WHERE fts @@ websearch_to_tsquery('english', :query)
+            {filter_clause}
+            ORDER BY score DESC
+            LIMIT :limit
+        """), params)
+        results = []
+        for row in rows.mappings():
+            item = dict(row)
+            item["entry_date"] = item["entry_date"].isoformat() if item["entry_date"] else ""
+            results.append(item)
+        return results
+
+
+async def hybrid_search(
+    query: str,
+    limit: int = 5,
+    user_id: str | None = None,
+    k: int = 60,
+) -> list[dict[str, Any]]:
+    """
+    Hybrid search combining semantic (pgvector cosine) and keyword (tsvector)
+    results via Reciprocal Rank Fusion (RRF).
+
+    RRF score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
+    where k=60 is the standard smoothing constant (Cormack et al.).
+
+    Args:
+        query:   Natural language search string.
+        limit:   Max results to return after fusion.
+        user_id: If set, filter to this user's entries only.
+        k:       RRF smoothing constant.
+
+    Returns:
+        List of entry dicts with a fused 'score' field, best first.
+    """
+    import asyncio
+
+    # Run both searches in parallel
+    sem_task = asyncio.create_task(semantic_search(query, limit=limit * 2, user_id=user_id))
+    kw_task = asyncio.create_task(keyword_search(query, limit=limit * 2, user_id=user_id))
+
+    sem_results, kw_results = await asyncio.gather(sem_task, kw_task)
+
+    # Build RRF scores
+    rrf_scores: dict[str, float] = {}
+    entry_map: dict[str, dict] = {}
+
+    for rank, entry in enumerate(sem_results):
+        eid = entry["entry_id"]
+        rrf_scores[eid] = rrf_scores.get(eid, 0) + 1.0 / (k + rank + 1)
+        entry_map[eid] = entry
+
+    for rank, entry in enumerate(kw_results):
+        eid = entry["entry_id"]
+        rrf_scores[eid] = rrf_scores.get(eid, 0) + 1.0 / (k + rank + 1)
+        entry_map[eid] = entry
+
+    # Sort by fused score descending
+    ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+    results = []
+    for eid, score in ranked:
+        entry = entry_map[eid]
+        entry["score"] = round(score, 6)
+        results.append(entry)
+
+    logger.debug(
+        f"[hybrid_search] semantic={len(sem_results)}, keyword={len(kw_results)}, "
+        f"fused={len(results)}"
+    )
+    return results
 
 
 async def get_entry(entry_id: str) -> Optional[dict[str, Any]]:
