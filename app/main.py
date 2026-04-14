@@ -9,6 +9,7 @@ from app.api.routes import ingest, entries, reminders, chat, admin, auth
 from app.config import settings
 from app.memory.vector_store import init_schema, backfill_from_entries
 from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
+from app.middleware.rate_limit import RateLimitMiddleware
 
 # --- Structured JSON logging with correlation ID ---
 _handler = logging.StreamHandler()
@@ -59,6 +60,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
