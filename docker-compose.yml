@@ -36,6 +36,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://spiritbox:spiritbox@db:5432/spiritbox
+      AUTO_CREATE_TABLES: "true"
     depends_on:
       db:
         condition: service_healthy

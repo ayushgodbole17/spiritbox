@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pythonjsonlogger.json import JsonFormatter
 
 from app.api.routes import ingest, entries, reminders, chat, admin, auth
+from app.config import settings
 from app.memory.vector_store import init_schema, backfill_from_entries
 from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
 
@@ -31,12 +32,15 @@ async def lifespan(app: FastAPI):
         logger.info("pgvector schema initialized successfully.")
     except Exception as e:
         logger.warning(f"pgvector schema initialization failed (non-fatal): {e}")
-    try:
-        from app.db.session import create_tables
-        await create_tables()
-        logger.info("PostgreSQL tables ready.")
-    except Exception as e:
-        logger.warning(f"PostgreSQL table creation failed (non-fatal): {e}")
+    if settings.AUTO_CREATE_TABLES:
+        try:
+            from app.db.session import create_tables
+            await create_tables()
+            logger.info("PostgreSQL tables ready (AUTO_CREATE_TABLES=true).")
+        except Exception as e:
+            logger.warning(f"PostgreSQL table creation failed (non-fatal): {e}")
+    else:
+        logger.info("Skipping auto table creation — use Alembic migrations.")
     # Backfill any entries missing from entry_embeddings (e.g. after Weaviate migration)
     try:
         count = await backfill_from_entries()

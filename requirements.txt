@@ -33,6 +33,7 @@ pgvector==0.4.2
 # --- Relational DB (Cloud SQL / PostgreSQL) ---
 sqlalchemy==2.0.36
 asyncpg==0.31.0
+alembic==1.15.2
 
 # --- GCP services ---
 google-cloud-firestore==2.26.0

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     JWT_EXPIRE_DAYS: int = Field(30, description="JWT expiry in days")
     FRONTEND_URL: str = Field("http://localhost:5173", description="Frontend URL for OAuth redirect")
 
+    # Dev convenience — set to true to auto-create tables on startup (skip in prod, use Alembic)
+    AUTO_CREATE_TABLES: bool = Field(False, description="Auto-create tables on startup (dev only)")
+
     # Firestore (kept for legacy reminder support during migration)
     FIRESTORE_COLLECTION_EVENTS: str = Field("events", description="Firestore collection name for events")
 
