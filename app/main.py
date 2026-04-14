@@ -3,11 +3,22 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pythonjsonlogger.json import JsonFormatter
 
 from app.api.routes import ingest, entries, reminders, chat, admin, auth
 from app.memory.vector_store import init_schema
+from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
 
-logging.basicConfig(level=logging.INFO)
+# --- Structured JSON logging with correlation ID ---
+_handler = logging.StreamHandler()
+_handler.setFormatter(JsonFormatter(
+    fmt="%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(message)s",
+    rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
+))
+_handler.addFilter(CorrelationIdFilter())
+logging.root.handlers = [_handler]
+logging.root.setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +48,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

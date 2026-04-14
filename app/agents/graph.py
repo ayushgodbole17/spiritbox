@@ -148,6 +148,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
     # Persist to PostgreSQL (source of truth)
     try:
         from app.db.crud import save_entry as pg_save_entry
+        from app.llm.token_tracker import get_usage
         await pg_save_entry(
             entry_id=entry_id,
             user_id=user_id,
@@ -156,6 +157,7 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
             categories=categories,
             model_used=result.get("model_used", {}),
             cache_hits=result.get("cache_hits", {}),
+            token_usage=get_usage().to_dict(),
         )
         logger.info(f"[graph] Entry {entry_id} saved to PostgreSQL.")
     except Exception as e:

@@ -292,6 +292,42 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
         return {"error": str(exc)}
 
 
+@router.get("/costs")
+async def get_costs(_: str = Depends(require_admin)) -> dict:
+    """Aggregate token usage and estimated cost from recent entries."""
+    from app.db.models import Entry
+    from app.db.session import get_session
+
+    try:
+        async with get_session() as session:
+            now = datetime.now(timezone.utc)
+            month_ago = now - timedelta(days=30)
+
+            rows = (await session.execute(
+                select(
+                    func.count().label("total_entries"),
+                    func.coalesce(func.sum(Entry.prompt_tokens), 0).label("total_prompt"),
+                    func.coalesce(func.sum(Entry.completion_tokens), 0).label("total_completion"),
+                    func.coalesce(func.sum(Entry.embedding_tokens), 0).label("total_embedding"),
+                    func.coalesce(func.sum(Entry.estimated_cost_usd), 0.0).label("total_cost"),
+                )
+                .where(Entry.created_at >= month_ago)
+            )).one()
+
+            total = rows.total_entries or 1
+            return {
+                "period": "last_30_days",
+                "total_entries": rows.total_entries,
+                "total_prompt_tokens": rows.total_prompt,
+                "total_completion_tokens": rows.total_completion,
+                "total_embedding_tokens": rows.total_embedding,
+                "total_cost_usd": round(float(rows.total_cost), 4),
+                "avg_cost_per_entry_usd": round(float(rows.total_cost) / total, 6),
+            }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 @router.get("/status")
 def get_status(_: str = Depends(require_admin)) -> dict:
     """Combined system health: evals, cache, LangFuse availability."""

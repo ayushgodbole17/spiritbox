@@ -39,8 +39,11 @@ _EMBED_DIMS  = 1536
 async def _embed(text_input: str) -> list[float]:
     """Generate an embedding vector using OpenAI."""
     from openai import AsyncOpenAI
+    from app.llm.token_tracker import record_embedding_usage
     client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     resp = await client.embeddings.create(model=_EMBED_MODEL, input=text_input[:8000])
+    if resp.usage:
+        record_embedding_usage(_EMBED_MODEL, resp.usage.total_tokens)
     return resp.data[0].embedding
 
 

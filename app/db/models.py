@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, ForeignKey,
+    Boolean, Column, DateTime, Float, ForeignKey, Integer,
     String, Text, ARRAY,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -46,6 +46,10 @@ class Entry(Base):
     summary = Column(Text)
     model_tier = Column(String)   # which model tier processed this entry
     cache_hit = Column(Boolean, default=False)  # was semantic cache used
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    embedding_tokens = Column(Integer, default=0)
+    estimated_cost_usd = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), default=_now)
 
     events = relationship("Event", back_populates="entry", cascade="all, delete-orphan")

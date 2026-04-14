@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.agents.graph import run_entry_pipeline
 from app.api.deps import get_current_user
+from app.llm.token_tracker import get_usage, reset_usage
 from app.transcription.whisper import transcribe
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,13 @@ router = APIRouter()
 
 class TextEntryRequest(BaseModel):
     text: str
+
+
+class TokenUsageResponse(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    embedding_tokens: int = 0
+    estimated_cost_usd: float = 0.0
 
 
 class IngestResponse(BaseModel):
@@ -27,6 +35,7 @@ class IngestResponse(BaseModel):
     model_used: dict[str, Any] = {}
     cache_hits: dict[str, Any] = {}
     prompt_versions: dict[str, Any] = {}
+    token_usage: TokenUsageResponse = TokenUsageResponse()
 
 
 @router.post("/text", response_model=IngestResponse, summary="Ingest a text journal entry")
@@ -36,6 +45,7 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
     persists to pgvector, and returns the structured output.
     """
     logger.info(f"Ingesting text entry for user={user_id}, length={len(request.text)}")
+    reset_usage()
 
     try:
         result = await run_entry_pipeline(request.text, user_id=user_id)
@@ -43,6 +53,7 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
         logger.error(f"Pipeline error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
 
+    usage = get_usage()
     return IngestResponse(
         entry_id=result["entry_id"],
         raw_text=request.text,
@@ -53,6 +64,7 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
         model_used=result.get("model_used", {}),
         cache_hits=result.get("cache_hits", {}),
         prompt_versions=result.get("prompt_versions", {}),
+        token_usage=TokenUsageResponse(**usage.to_dict()),
     )
 
 
@@ -66,6 +78,7 @@ async def ingest_audio(
     text pipeline as /ingest/text.
     """
     logger.info(f"Ingesting audio entry for user={user_id}, filename={file.filename}")
+    reset_usage()
 
     if not file.content_type or not file.content_type.startswith("audio/"):
         # Be lenient — Whisper handles many formats; just warn
@@ -86,6 +99,7 @@ async def ingest_audio(
         logger.error(f"Pipeline error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
 
+    usage = get_usage()
     return IngestResponse(
         entry_id=result["entry_id"],
         raw_text=text,
@@ -96,4 +110,5 @@ async def ingest_audio(
         model_used=result.get("model_used", {}),
         cache_hits=result.get("cache_hits", {}),
         prompt_versions=result.get("prompt_versions", {}),
+        token_usage=TokenUsageResponse(**usage.to_dict()),
     )

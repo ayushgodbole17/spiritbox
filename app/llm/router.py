@@ -30,6 +30,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from app.config import settings
+from app.llm.token_tracker import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ async def chat_completion(
         content = response.choices[0].message.content or ""
         if content.strip():
             logger.debug(f"[router] {tier} → {primary_model} (ok)")
+            if response.usage:
+                record_usage(primary_model, response.usage.prompt_tokens, response.usage.completion_tokens)
             return response, primary_model
         # Empty content — cascade
         logger.warning(
@@ -96,6 +99,8 @@ async def chat_completion(
         temperature=temperature,
         **kwargs,
     )
+    if response.usage:
+        record_usage(fallback_model, response.usage.prompt_tokens, response.usage.completion_tokens)
     logger.info(f"[router] Cascade: used {fallback_model} (original tier: {tier})")
     return response, fallback_model
 

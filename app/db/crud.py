@@ -32,6 +32,7 @@ async def save_entry(
     categories: list[dict],   # [{sentence, categories}] from classifier
     model_used: dict,
     cache_hits: dict,
+    token_usage: dict | None = None,
 ) -> str:
     """
     Persist a journal entry and its sentence tags to PostgreSQL.
@@ -42,6 +43,7 @@ async def save_entry(
     models = [v for v in model_used.values() if v and v != "cache"]
     model_tier = models[0] if models else None
     any_cache_hit = any(v is True for v in cache_hits.values())
+    tu = token_usage or {}
 
     async with get_session() as session:
         entry = Entry(
@@ -51,6 +53,10 @@ async def save_entry(
             summary=summary,
             model_tier=model_tier,
             cache_hit=any_cache_hit,
+            prompt_tokens=tu.get("prompt_tokens", 0),
+            completion_tokens=tu.get("completion_tokens", 0),
+            embedding_tokens=tu.get("embedding_tokens", 0),
+            estimated_cost_usd=tu.get("estimated_cost_usd", 0.0),
             created_at=datetime.now(timezone.utc),
         )
         session.add(entry)
