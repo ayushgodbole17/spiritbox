@@ -10,6 +10,7 @@ env:
   GCP_REGION: asia-south1
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   IMAGE_NAME: asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/spiritbox/spiritbox
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ---------------------------------------------------------------------------

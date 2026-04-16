@@ -8,9 +8,11 @@ The /stream variant uses SSE for real-time token delivery.
 import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from app.api.deps import get_current_user
 
 router = APIRouter()
 
@@ -39,7 +41,7 @@ class ChatResponse(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, user_id: str = Depends(get_current_user)):
     """
     Answer a question about past journal entries using RAG.
 
@@ -50,12 +52,12 @@ async def chat_endpoint(req: ChatRequest):
     from app.agents.chat_agent import chat
 
     history = [{"role": m.role, "content": m.content} for m in req.history]
-    result = await chat(message=req.message, history=history, top_k=req.top_k)
+    result = await chat(message=req.message, history=history, top_k=req.top_k, user_id=user_id)
     return result
 
 
 @router.post("/stream", summary="Streaming chat via SSE")
-async def chat_stream_endpoint(req: ChatRequest):
+async def chat_stream_endpoint(req: ChatRequest, user_id: str = Depends(get_current_user)):
     """
     Streaming variant of /chat. Returns an SSE stream of token events.
 
@@ -70,7 +72,7 @@ async def chat_stream_endpoint(req: ChatRequest):
     async def event_generator():
         try:
             async for token, sources in chat_stream(
-                message=req.message, history=history, top_k=req.top_k
+                message=req.message, history=history, top_k=req.top_k, user_id=user_id
             ):
                 if sources is not None:
                     data = json.dumps({"token": "", "done": True, "sources": sources})

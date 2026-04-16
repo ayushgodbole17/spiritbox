@@ -352,16 +352,21 @@ async def delete_entry(entry_id: str) -> bool:
         return result.rowcount > 0
 
 
-async def list_entries(limit: int = 20) -> list[dict[str, Any]]:
-    """Return recent entries newest-first."""
+async def list_entries(limit: int = 20, user_id: str | None = None) -> list[dict[str, Any]]:
+    """Return recent entries newest-first. Filters by user_id if provided."""
+    filter_clause = "WHERE user_id = :user_id" if user_id else ""
+    params: dict = {"limit": limit}
+    if user_id:
+        params["user_id"] = user_id
     async with get_session() as session:
-        rows = await session.execute(text("""
+        rows = await session.execute(text(f"""
             SELECT entry_id::text, user_id, raw_text, summary, categories,
                    sentence_tags, entry_date
             FROM entry_embeddings
+            {filter_clause}
             ORDER BY entry_date DESC
             LIMIT :limit
-        """), {"limit": limit})
+        """), params)
         results = []
         for row in rows.mappings():
             item = dict(row)

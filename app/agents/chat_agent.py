@@ -63,6 +63,7 @@ async def chat(
     message: str,
     history: list[dict] | None = None,
     top_k: int = 5,
+    user_id: str | None = None,
 ) -> dict:
     """
     Answer a question using RAG over past journal entries.
@@ -77,16 +78,28 @@ async def chat(
           - answer: str
           - sources: list of entry dicts used as context
     """
-    from app.memory.vector_store import hybrid_search
+    from app.memory.vector_store import hybrid_search, list_entries
 
     # 1. Retrieve relevant entries
     try:
-        sources = await hybrid_search(message, limit=top_k)
+        sources = await hybrid_search(message, limit=top_k, user_id=user_id)
         if not sources:
-            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r}")
+            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r} user={user_id}")
     except Exception as exc:
         logger.warning(f"[chat_agent] hybrid_search raised: {exc!r}. Proceeding without context.")
         sources = []
+
+    # Fallback: if retrieval found nothing, seed the LLM with the user's most
+    # recent entries so it has SOMETHING to reason over. Better to summarise
+    # recent context than confidently claim "no journal entries".
+    if not sources:
+        try:
+            sources = await list_entries(limit=top_k, user_id=user_id)
+            if sources:
+                logger.info(f"[chat_agent] fallback: using {len(sources)} most recent entries")
+        except Exception as exc:
+            logger.warning(f"[chat_agent] fallback list_entries failed: {exc!r}")
+            sources = []
 
     # 2. Build messages
     context = _build_context(sources)
@@ -128,20 +141,30 @@ async def chat_stream(
     message: str,
     history: list[dict] | None = None,
     top_k: int = 5,
+    user_id: str | None = None,
 ):
     """
     Streaming variant of chat(). Yields (token, sources_or_none) tuples.
     The final yield has token="" and includes the sources list.
     """
-    from app.memory.vector_store import hybrid_search
+    from app.memory.vector_store import hybrid_search, list_entries
 
     try:
-        sources = await hybrid_search(message, limit=top_k)
+        sources = await hybrid_search(message, limit=top_k, user_id=user_id)
         if not sources:
-            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r}")
+            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r} user={user_id}")
     except Exception as exc:
         logger.warning(f"[chat_agent] hybrid_search raised: {exc!r}. Proceeding without context.")
         sources = []
+
+    if not sources:
+        try:
+            sources = await list_entries(limit=top_k, user_id=user_id)
+            if sources:
+                logger.info(f"[chat_agent] fallback: using {len(sources)} most recent entries")
+        except Exception as exc:
+            logger.warning(f"[chat_agent] fallback list_entries failed: {exc!r}")
+            sources = []
 
     context = _build_context(sources)
     system_content = SYSTEM_PROMPT.format(context=context)
