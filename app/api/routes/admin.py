@@ -342,6 +342,45 @@ async def get_costs(_: str = Depends(require_admin)) -> dict:
         return {"error": str(exc)}
 
 
+@router.get("/upcoming-reminders")
+async def upcoming_reminders(
+    days: int = 7,
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    List events with reminder_time in the next `days` days, so you can sanity-check
+    the intent detector's scheduling output.
+    """
+    from app.db.models import Event
+    from app.db.session import get_session
+
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(days=days)
+
+    async with get_session() as session:
+        rows = (await session.execute(
+            select(Event)
+            .where(Event.reminder_time >= now)
+            .where(Event.reminder_time <= window_end)
+            .order_by(Event.reminder_time.asc())
+        )).scalars().all()
+
+    return {
+        "window_days": days,
+        "count": len(rows),
+        "reminders": [
+            {
+                "event_id":      str(r.id),
+                "description":   r.description,
+                "event_time":    r.event_time.isoformat() if r.event_time else None,
+                "reminder_time": r.reminder_time.isoformat() if r.reminder_time else None,
+                "reminded":      r.reminded,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/rag-diagnostics")
 async def rag_diagnostics(
     query: str = "test",

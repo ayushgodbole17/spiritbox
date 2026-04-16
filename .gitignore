@@ -42,3 +42,7 @@ deploy-frontend.ps1
 # Temp files
 db_url.txt
 tmp.txt
+
+# Internal scratch notes (not for the repo)
+SYSTEM_WALKTHROUGH.md
+spiritbox_v2.docx

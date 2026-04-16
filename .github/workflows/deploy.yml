@@ -151,7 +151,7 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app" \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app,USER_EMAIL=godbole.ayush@gmail.com,USER_TIMEZONE=Asia/Kolkata,REMINDER_FROM_EMAIL=noreply@spiritbox.app,CLOUD_FUNCTION_URL=https://asia-south1-spiritbox-491411.cloudfunctions.net/send-reminder" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\

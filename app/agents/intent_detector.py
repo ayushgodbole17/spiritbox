@@ -20,6 +20,7 @@ from langfuse import observe
 from pydantic import ValidationError
 
 from app.agents.graph import EntryState
+from app.agents.reminder_timing import compute_reminder_time
 from app.agents.schemas import ReminderResult
 from app.config import settings
 from app.llm.guardrails import validate_llm_output
@@ -143,17 +144,25 @@ async def detect_intents(state: EntryState) -> EntryState:
 
         event_time_str = reminder.get("event_time", "")
         reminder_time_str = reminder.get("reminder_time", "")
+        granularity = reminder.get("granularity", "time")
         description = reminder.get("event_description", "")
         channel = reminder.get("channel", "email")
 
-        event_time = _parse_iso8601(event_time_str)
-        reminder_time = _parse_iso8601(reminder_time_str)
+        event_time, reminder_time = compute_reminder_time(
+            event_time_str=event_time_str,
+            proposed_reminder_str=reminder_time_str,
+            granularity=granularity,
+            timezone_name=settings.USER_TIMEZONE,
+        )
 
         if event_time is None or reminder_time is None:
             logger.warning(
-                f"[intent_detector] Skipping reminder with unparseable datetimes: {reminder}"
+                f"[intent_detector] Skipping reminder (unparseable or in past): {reminder}"
             )
             continue
+
+        reminder_time_str = reminder_time.isoformat()
+        event_time_str = event_time.isoformat()
 
         # Persist to PostgreSQL (authoritative source for reminders)
         pg_event_id: str | None = None

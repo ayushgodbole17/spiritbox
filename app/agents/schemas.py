@@ -59,7 +59,14 @@ class ReminderItem(BaseModel):
     event_description: str = ""
     event_time: str = ""
     reminder_time: str = ""
+    granularity: str = "time"
     channel: str = "email"
+
+    @field_validator("granularity")
+    @classmethod
+    def normalize_granularity(cls, v: str) -> str:
+        v = (v or "time").strip().lower()
+        return v if v in {"time", "day", "week", "month"} else "time"
 
 
 class ReminderResult(BaseModel):
