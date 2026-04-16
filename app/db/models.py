@@ -81,6 +81,32 @@ class SentenceTag(Base):
     entry = relationship("Entry", back_populates="sentence_tags")
 
 
+class Habit(Base):
+    __tablename__ = "habits"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String)
+    cadence = Column(String, default="occasional")  # daily | weekly | occasional
+    created_at = Column(DateTime(timezone=True), default=_now)
+    last_logged_at = Column(DateTime(timezone=True))
+    streak_days = Column(Integer, default=0)
+
+    logs = relationship("HabitLog", back_populates="habit", cascade="all, delete-orphan")
+
+
+class HabitLog(Base):
+    __tablename__ = "habit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    habit_id = Column(UUID(as_uuid=True), ForeignKey("habits.id"), index=True)
+    entry_id = Column(UUID(as_uuid=True), ForeignKey("entries.id"))
+    logged_at = Column(DateTime(timezone=True), default=_now)
+
+    habit = relationship("Habit", back_populates="logs")
+
+
 class EvalRun(Base):
     __tablename__ = "eval_runs"
 

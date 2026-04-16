@@ -20,13 +20,15 @@ logger = logging.getLogger(__name__)
 # State schema
 # ---------------------------------------------------------------------------
 
-class EntryState(TypedDict):
+class EntryState(TypedDict, total=False):
     raw_text: str
     entities: dict
     categories: list
     events: list
     summary: str
     entry_id: str
+    user_id: str
+    habits: dict          # {matched: [habit_id], new: [name]}
     model_used: dict      # tracks which model tier ran each agent
     cache_hits: dict      # tracks which agents hit the semantic cache
     prompt_versions: dict # tracks which LangFuse prompt version each agent used
@@ -60,6 +62,16 @@ async def node_summarizer(state: EntryState) -> EntryState:
     return await summarize_entry(state)
 
 
+async def node_habit_tracker(state: EntryState) -> EntryState:
+    logger.debug("Node: habit_tracker")
+    try:
+        from app.agents.habit_tracker import track_habits
+        return await track_habits(state)
+    except Exception as exc:
+        logger.warning(f"[graph] habit_tracker bombed (non-fatal): {exc!r}")
+        return {**state, "habits": {"matched": [], "new": []}}
+
+
 # ---------------------------------------------------------------------------
 # Graph construction
 # ---------------------------------------------------------------------------
@@ -71,13 +83,15 @@ def _build_graph() -> StateGraph:
     graph.add_node("classifier", node_classifier)
     graph.add_node("intent_detector", node_intent_detector)
     graph.add_node("summarizer", node_summarizer)
+    graph.add_node("habit_tracker", node_habit_tracker)
 
     # Linear supervisor routing
     graph.set_entry_point("entity_extractor")
     graph.add_edge("entity_extractor", "classifier")
     graph.add_edge("classifier", "intent_detector")
     graph.add_edge("intent_detector", "summarizer")
-    graph.add_edge("summarizer", END)
+    graph.add_edge("summarizer", "habit_tracker")
+    graph.add_edge("habit_tracker", END)
 
     return graph
 
@@ -109,6 +123,8 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
         "events": [],
         "summary": "",
         "entry_id": entry_id,
+        "user_id": user_id,
+        "habits": {"matched": [], "new": []},
         "model_used": {},
         "cache_hits": {},
         "prompt_versions": {},

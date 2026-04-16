@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pythonjsonlogger.json import JsonFormatter
 
-from app.api.routes import ingest, entries, reminders, chat, admin, auth
+from app.api.routes import ingest, entries, reminders, chat, admin, auth, habits
 from app.memory.vector_store import init_schema, backfill_from_entries
 from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -84,6 +84,7 @@ app.include_router(ingest.router, prefix="/ingest", tags=["Ingest"])
 app.include_router(entries.router, prefix="/entries", tags=["Entries"])
 app.include_router(reminders.router, prefix="/reminders", tags=["Reminders"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(habits.router, prefix="/api/habits", tags=["Habits"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
 

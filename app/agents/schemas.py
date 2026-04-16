@@ -71,3 +71,33 @@ class ReminderItem(BaseModel):
 
 class ReminderResult(BaseModel):
     reminders: list[ReminderItem]
+
+
+# ---------------------------------------------------------------------------
+# Habit Tracker
+# ---------------------------------------------------------------------------
+
+VALID_CADENCES = {"daily", "weekly", "occasional"}
+
+
+class HabitCandidate(BaseModel):
+    name: str
+    category: str = "other"
+    cadence: str = "occasional"
+
+    @field_validator("cadence")
+    @classmethod
+    def normalize_cadence(cls, v: str) -> str:
+        v = (v or "occasional").strip().lower()
+        return v if v in VALID_CADENCES else "occasional"
+
+    @field_validator("category")
+    @classmethod
+    def normalize_category(cls, v: str) -> str:
+        v = (v or "other").strip().lower()
+        return v if v in VALID_CATEGORIES else "other"
+
+
+class HabitExtractionResult(BaseModel):
+    matched: list[str] = []  # habit_id strings of existing habits hit by this entry
+    new_candidates: list[HabitCandidate] = []
