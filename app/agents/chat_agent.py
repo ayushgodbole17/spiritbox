@@ -82,8 +82,10 @@ async def chat(
     # 1. Retrieve relevant entries
     try:
         sources = await hybrid_search(message, limit=top_k)
+        if not sources:
+            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r}")
     except Exception as exc:
-        logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
+        logger.warning(f"[chat_agent] hybrid_search raised: {exc!r}. Proceeding without context.")
         sources = []
 
     # 2. Build messages
@@ -135,8 +137,10 @@ async def chat_stream(
 
     try:
         sources = await hybrid_search(message, limit=top_k)
+        if not sources:
+            logger.info(f"[chat_agent] hybrid_search returned 0 matches for query={message!r}")
     except Exception as exc:
-        logger.warning(f"[chat_agent] pgvector search failed: {exc}. Proceeding without context.")
+        logger.warning(f"[chat_agent] hybrid_search raised: {exc!r}. Proceeding without context.")
         sources = []
 
     context = _build_context(sources)

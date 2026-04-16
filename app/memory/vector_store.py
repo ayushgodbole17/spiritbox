@@ -54,11 +54,12 @@ async def _embed(text_input: str) -> list[float]:
 async def init_schema() -> None:
     """
     Enable pgvector extension and create entry_embeddings table if absent.
-    Safe to call multiple times.
+    Each DDL runs in its own transaction so one failure doesn't roll back
+    previously-successful statements.
     """
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.execute(text(f"""
+    steps = [
+        ("vector extension", "CREATE EXTENSION IF NOT EXISTS vector"),
+        ("entry_embeddings table", f"""
             CREATE TABLE IF NOT EXISTS entry_embeddings (
                 entry_id    UUID PRIMARY KEY,
                 user_id     TEXT NOT NULL DEFAULT 'default',
@@ -69,26 +70,32 @@ async def init_schema() -> None:
                 entry_date  TIMESTAMPTZ DEFAULT NOW(),
                 embedding   vector({_EMBED_DIMS})
             )
-        """))
-        await conn.execute(text("""
+        """),
+        ("ivfflat index", """
             CREATE INDEX IF NOT EXISTS entry_embeddings_ivfflat_idx
             ON entry_embeddings
             USING ivfflat (embedding vector_cosine_ops)
             WITH (lists = 100)
-        """))
-        # Full-text search: generated tsvector column + GIN index
-        await conn.execute(text("""
+        """),
+        ("fts generated column", """
             ALTER TABLE entry_embeddings
             ADD COLUMN IF NOT EXISTS fts tsvector
             GENERATED ALWAYS AS (
                 to_tsvector('english', coalesce(raw_text, '') || ' ' || coalesce(summary, ''))
             ) STORED
-        """))
-        await conn.execute(text("""
+        """),
+        ("fts GIN index", """
             CREATE INDEX IF NOT EXISTS entry_embeddings_fts_idx
             ON entry_embeddings USING gin (fts)
-        """))
-    logger.info("pgvector schema ready.")
+        """),
+    ]
+    for label, ddl in steps:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(ddl))
+            logger.info(f"pgvector init: {label} ok")
+        except Exception as exc:
+            logger.warning(f"pgvector init: {label} failed (continuing): {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -259,11 +266,28 @@ async def hybrid_search(
     """
     import asyncio
 
-    # Run both searches in parallel
     sem_task = asyncio.create_task(semantic_search(query, limit=limit * 2, user_id=user_id))
     kw_task = asyncio.create_task(keyword_search(query, limit=limit * 2, user_id=user_id))
+    sem_raw, kw_raw = await asyncio.gather(sem_task, kw_task, return_exceptions=True)
 
-    sem_results, kw_results = await asyncio.gather(sem_task, kw_task)
+    if isinstance(sem_raw, Exception):
+        logger.warning(f"[hybrid_search] semantic leg failed: {sem_raw}")
+        sem_results: list[dict[str, Any]] = []
+    else:
+        sem_results = sem_raw
+    if isinstance(kw_raw, Exception):
+        logger.warning(f"[hybrid_search] keyword leg failed: {kw_raw}")
+        kw_results: list[dict[str, Any]] = []
+    else:
+        kw_results = kw_raw
+
+    if not sem_results and not kw_results:
+        if isinstance(sem_raw, Exception) and isinstance(kw_raw, Exception):
+            raise RuntimeError(f"both search legs failed: semantic={sem_raw}; keyword={kw_raw}")
+        logger.info(f"[hybrid_search] zero matches for query={query!r}")
+        return []
+
+    logger.info(f"[hybrid_search] semantic={len(sem_results)} keyword={len(kw_results)}")
 
     # Build RRF scores
     rrf_scores: dict[str, float] = {}
@@ -288,10 +312,7 @@ async def hybrid_search(
         entry["score"] = round(score, 6)
         results.append(entry)
 
-    logger.debug(
-        f"[hybrid_search] semantic={len(sem_results)}, keyword={len(kw_results)}, "
-        f"fused={len(results)}"
-    )
+    logger.info(f"[hybrid_search] fused={len(results)}")
     return results
 
 

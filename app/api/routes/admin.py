@@ -342,6 +342,58 @@ async def get_costs(_: str = Depends(require_admin)) -> dict:
         return {"error": str(exc)}
 
 
+@router.get("/rag-diagnostics")
+async def rag_diagnostics(
+    query: str = "test",
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    RAG pipeline health probe: counts, fts/index presence, sample search.
+    """
+    from sqlalchemy import text
+    from app.db.session import get_session
+    from app.memory.vector_store import hybrid_search, semantic_search, keyword_search
+
+    out: dict[str, Any] = {"query": query}
+
+    async with get_session() as session:
+        out["entries_count"] = (
+            await session.execute(text("SELECT COUNT(*) FROM entries"))
+        ).scalar()
+        try:
+            out["entry_embeddings_count"] = (
+                await session.execute(text("SELECT COUNT(*) FROM entry_embeddings"))
+            ).scalar()
+        except Exception as exc:
+            out["entry_embeddings_count"] = f"error: {exc}"
+
+        out["fts_column_exists"] = bool((await session.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name='entry_embeddings' AND column_name='fts'
+        """))).scalar())
+        out["gin_index_exists"] = bool((await session.execute(text("""
+            SELECT 1 FROM pg_indexes
+            WHERE tablename='entry_embeddings' AND indexname='entry_embeddings_fts_idx'
+        """))).scalar())
+        out["ivfflat_index_exists"] = bool((await session.execute(text("""
+            SELECT 1 FROM pg_indexes
+            WHERE tablename='entry_embeddings' AND indexname='entry_embeddings_ivfflat_idx'
+        """))).scalar())
+
+    async def _probe(fn, label):
+        try:
+            rows = await fn(query, limit=3)
+            return {"ok": True, "count": len(rows), "sample_ids": [r.get("entry_id") for r in rows]}
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    out["semantic_search"] = await _probe(semantic_search, "semantic")
+    out["keyword_search"] = await _probe(keyword_search, "keyword")
+    out["hybrid_search"] = await _probe(hybrid_search, "hybrid")
+
+    return out
+
+
 @router.get("/status")
 def get_status(_: str = Depends(require_admin)) -> dict:
     """Combined system health: evals, cache, LangFuse availability."""
