@@ -266,8 +266,8 @@ async def hybrid_search(
     """
     import asyncio
 
-    sem_task = asyncio.create_task(semantic_search(query, limit=limit * 2, user_id=user_id))
-    kw_task = asyncio.create_task(keyword_search(query, limit=limit * 2, user_id=user_id))
+    sem_task = asyncio.create_task(semantic_search(query, limit=limit * 3, user_id=user_id))
+    kw_task = asyncio.create_task(keyword_search(query, limit=limit * 3, user_id=user_id))
     sem_raw, kw_raw = await asyncio.gather(sem_task, kw_task, return_exceptions=True)
 
     if isinstance(sem_raw, Exception):

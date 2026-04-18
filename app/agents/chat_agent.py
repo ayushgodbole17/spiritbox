@@ -48,8 +48,14 @@ def _format_entry(entry: dict, index: int) -> str:
 
     summary = entry.get("summary", "").strip()
     raw = entry.get("raw_text", "").strip()
-    text = summary if summary else raw[:400]
-    return f"[Entry {index + 1} — {date_str}]\n{text}"
+
+    parts = [f"[Entry {index + 1} — {date_str}]"]
+    if summary:
+        parts.append(f"Summary: {summary}")
+    if raw:
+        # Always include the raw text so the LLM has the actual words
+        parts.append(raw[:800])
+    return "\n".join(parts)
 
 
 def _build_context(entries: list[dict]) -> str:
@@ -62,7 +68,7 @@ def _build_context(entries: list[dict]) -> str:
 async def chat(
     message: str,
     history: list[dict] | None = None,
-    top_k: int = 5,
+    top_k: int = 10,
     user_id: str | None = None,
 ) -> dict:
     """
@@ -140,7 +146,7 @@ async def chat(
 async def chat_stream(
     message: str,
     history: list[dict] | None = None,
-    top_k: int = 5,
+    top_k: int = 10,
     user_id: str | None = None,
 ):
     """
