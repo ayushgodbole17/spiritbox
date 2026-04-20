@@ -381,6 +381,77 @@ async def upcoming_reminders(
     }
 
 
+@router.post("/mark-reminded")
+async def mark_reminded(
+    payload: dict,
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    Mark an event as reminded. Called by the send_reminder Cloud Function
+    after a successful email send.
+    """
+    from app.db.crud import mark_event_reminded
+    event_id = (payload or {}).get("event_id", "")
+    if not event_id:
+        raise HTTPException(status_code=400, detail="event_id is required")
+    try:
+        ok = await mark_event_reminded(event_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"ok": ok, "event_id": event_id}
+
+
+@router.post("/test-reminder")
+async def test_reminder(
+    minutes_from_now: int = 3,
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    Smoke test for the email reminder pipeline.
+
+    Creates a fake Event row + Cloud Scheduler job firing in N minutes.
+    On success, an email lands in USER_EMAIL ~N minutes later.
+    """
+    from app.db.crud import save_event, update_event_scheduler_job
+    from app.scheduler.create_job import create_reminder_job
+
+    if minutes_from_now < 1 or minutes_from_now > 60:
+        raise HTTPException(status_code=400, detail="minutes_from_now must be in [1, 60]")
+
+    fires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now)
+    description = "[TEST] Spiritbox reminder smoke test"
+
+    pg_event_id = await save_event(
+        entry_id="",
+        description=description,
+        event_time=fires_at,
+        reminder_time=fires_at,
+    )
+    job_name = f"reminder-{pg_event_id}"
+    await create_reminder_job(
+        job_name=job_name,
+        schedule_time=fires_at,
+        payload={
+            "event_id": pg_event_id,
+            "firestore_id": None,
+            "description": description,
+            "event_time": fires_at.isoformat(),
+            "user_email": settings.USER_EMAIL,
+        },
+    )
+    try:
+        await update_event_scheduler_job(pg_event_id, job_name)
+    except Exception:
+        pass
+
+    return {
+        "event_id": pg_event_id,
+        "job_name": job_name,
+        "fires_at": fires_at.isoformat(),
+        "user_email": settings.USER_EMAIL,
+    }
+
+
 @router.get("/rag-diagnostics")
 async def rag_diagnostics(
     query: str = "test",

@@ -196,5 +196,8 @@ jobs:
             --entry-point send_reminder \
             --trigger-http \
             --allow-unauthenticated \
-            --set-secrets "SENDGRID_API_KEY=sendgrid-api-key:latest" \
-            --set-env-vars "FIRESTORE_COLLECTION_EVENTS=events,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
+            --set-secrets "\
+              SENDGRID_API_KEY=sendgrid-api-key:latest,\
+              ADMIN_USERNAME=admin-username:latest,\
+              ADMIN_PASSWORD=admin-password:latest" \
+            --set-env-vars "FIRESTORE_COLLECTION_EVENTS=events,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},USER_EMAIL=godbole.ayush@gmail.com,USER_TIMEZONE=Asia/Kolkata,REMINDER_FROM_EMAIL=noreply@spiritbox.app,SPIRITBOX_API_BASE=https://spiritbox-api-1002281700659.asia-south1.run.app"

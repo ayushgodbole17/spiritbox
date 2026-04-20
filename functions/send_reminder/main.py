@@ -5,25 +5,24 @@ Triggered by Cloud Scheduler via HTTP POST.
 
 Expected request body (JSON):
     {
-        "event_id":    "<Firestore document ID>",
-        "description": "<event description>",
-        "event_time":  "<ISO 8601 datetime string>",
-        "user_email":  "<recipient email>"
+        "event_id":     "<Postgres event UUID>",       # preferred
+        "firestore_id": "<Firestore doc ID>",          # optional, for Firestore mark
+        "description":  "<event description>",
+        "event_time":   "<ISO 8601 datetime string>",
+        "user_email":   "<recipient email>"
     }
 
 On success:
     - Sends a reminder email via SendGrid.
-    - Marks the Firestore event document as reminded=True.
+    - Marks Postgres events.reminded=true via POST {SPIRITBOX_API_BASE}/api/admin/mark-reminded.
+    - Best-effort marks the Firestore event document as reminded=True.
     - Returns HTTP 200.
-
-On failure:
-    - Returns HTTP 500 with an error message (does NOT mark as reminded).
 """
+import base64
 import json
 import logging
 import os
 import functions_framework  # type: ignore
-from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ logger = logging.getLogger(__name__)
 @functions_framework.http
 def send_reminder(request):
     """Cloud Function entry point."""
-    # Parse request body
     try:
         data = request.get_json(force=True) or {}
     except Exception as e:
@@ -40,18 +38,20 @@ def send_reminder(request):
         return ("Bad Request: invalid JSON", 400)
 
     event_id = data.get("event_id")
+    firestore_id = data.get("firestore_id")
     description = data.get("description", "Upcoming event")
     event_time_str = data.get("event_time", "")
     user_email = data.get("user_email") or os.environ.get("USER_EMAIL", "")
 
-    if not event_id:
-        return ("Bad Request: event_id is required", 400)
+    if not event_id and not firestore_id:
+        return ("Bad Request: at least one of event_id or firestore_id is required", 400)
     if not user_email:
         return ("Bad Request: user_email is required", 400)
 
-    logger.info(f"Processing reminder for event_id={event_id}, to={user_email}")
+    logger.info(
+        f"Processing reminder event_id={event_id} firestore_id={firestore_id} to={user_email}"
+    )
 
-    # Build email content
     from_email = os.environ.get("REMINDER_FROM_EMAIL", "noreply@spiritbox.app")
     user_tz = os.environ.get("USER_TIMEZONE", "Asia/Kolkata")
 
@@ -59,7 +59,6 @@ def send_reminder(request):
     body_text = f"Spiritbox Reminder\n\n{description}\n{event_time_str} ({user_tz})"
     subject = f"Reminder: {description}"
 
-    # Send email
     success = _send_email(
         api_key=os.environ.get("SENDGRID_API_KEY", ""),
         from_email=from_email,
@@ -73,14 +72,23 @@ def send_reminder(request):
         logger.error(f"Email send failed for event_id={event_id}")
         return ("Internal Server Error: email send failed", 500)
 
-    # Mark reminded in Firestore
-    try:
-        _mark_reminded(event_id)
-    except Exception as e:
-        logger.error(f"Failed to mark event {event_id} as reminded: {e}")
-        # Non-fatal — email was sent; Firestore update can be retried.
+    if event_id:
+        try:
+            _mark_postgres_reminded(event_id)
+        except Exception as e:
+            logger.error(f"Failed to mark Postgres event {event_id} as reminded: {e}")
 
-    return (json.dumps({"status": "ok", "event_id": event_id}), 200, {"Content-Type": "application/json"})
+    if firestore_id:
+        try:
+            _mark_firestore_reminded(firestore_id)
+        except Exception as e:
+            logger.error(f"Failed to mark Firestore event {firestore_id} as reminded: {e}")
+
+    return (
+        json.dumps({"status": "ok", "event_id": event_id, "firestore_id": firestore_id}),
+        200,
+        {"Content-Type": "application/json"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +115,34 @@ def _send_email(api_key, from_email, to_email, subject, body_html, body_text):
         return False
 
 
-def _mark_reminded(event_id):
+def _mark_postgres_reminded(event_id: str) -> None:
+    """Call the Spiritbox API to mark the event as reminded in Postgres."""
+    api_base = os.environ.get("SPIRITBOX_API_BASE", "")
+    user = os.environ.get("ADMIN_USERNAME", "")
+    pwd = os.environ.get("ADMIN_PASSWORD", "")
+    if not (api_base and user and pwd):
+        logger.warning("Postgres mark skipped — SPIRITBOX_API_BASE/ADMIN_* not configured")
+        return
+
+    import requests  # type: ignore
+    auth_header = "Basic " + base64.b64encode(f"{user}:{pwd}".encode()).decode()
+    resp = requests.post(
+        f"{api_base.rstrip('/')}/api/admin/mark-reminded",
+        json={"event_id": event_id},
+        headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"mark-reminded API returned {resp.status_code}: {resp.text}")
+    logger.info(f"Marked Postgres event {event_id} as reminded.")
+
+
+def _mark_firestore_reminded(event_id: str) -> None:
     from google.cloud import firestore  # type: ignore
     collection = os.environ.get("FIRESTORE_COLLECTION_EVENTS", "events")
     db = firestore.Client()
     db.collection(collection).document(event_id).update({"reminded": True})
-    logger.info(f"Marked event {event_id} as reminded in Firestore.")
+    logger.info(f"Marked Firestore event {event_id} as reminded.")
 
 
 def _build_html(description, event_time, user_tz):

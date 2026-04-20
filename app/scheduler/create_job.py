@@ -6,7 +6,7 @@ of making a real GCP API call. Set GCP_PROJECT_ID to enable real scheduling.
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.config import settings
@@ -107,5 +107,8 @@ async def delete_reminder_job(job_name: str) -> None:
 
 
 def _datetime_to_cron(dt: datetime) -> str:
-    """Convert a UTC datetime to a cron expression (fires once at that minute)."""
-    return f"{dt.minute} {dt.hour} {dt.day} {dt.month} *"
+    """Convert a datetime to a UTC cron expression (fires once at that minute)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    utc = dt.astimezone(timezone.utc)
+    return f"{utc.minute} {utc.hour} {utc.day} {utc.month} *"

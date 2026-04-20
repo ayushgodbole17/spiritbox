@@ -174,6 +174,34 @@ async def save_event(
         return str(event_uuid)
 
 
+async def update_event_scheduler_job(event_id: str, job_name: str) -> None:
+    """Persist the Cloud Scheduler job name on an existing event row."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(Event).where(Event.id == uuid.UUID(event_id))
+        )
+        event = result.scalar_one_or_none()
+        if event is None:
+            logger.warning(f"[crud] update_event_scheduler_job: event {event_id} not found")
+            return
+        event.scheduler_job = job_name
+        await session.commit()
+
+
+async def mark_event_reminded(event_id: str) -> bool:
+    """Set events.reminded = TRUE. Returns True if the row existed."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(Event).where(Event.id == uuid.UUID(event_id))
+        )
+        event = result.scalar_one_or_none()
+        if event is None:
+            return False
+        event.reminded = True
+        await session.commit()
+        return True
+
+
 async def list_upcoming_events(limit: int = 10) -> list[dict[str, Any]]:
     """Return upcoming events not yet reminded, sorted by reminder_time ascending."""
     now = datetime.now(timezone.utc)

@@ -193,20 +193,27 @@ async def detect_intents(state: EntryState) -> EntryState:
         except Exception as exc:
             logger.debug(f"[intent_detector] Firestore save skipped: {exc}")
 
-        # Schedule reminder job (best-effort)
+        # Schedule reminder job (best-effort).
+        # Payload field names MUST match what functions/send_reminder/main.py expects.
         job_name = f"reminder-{pg_event_id}"
         try:
             await create_reminder_job(
                 job_name=job_name,
                 schedule_time=reminder_time,
                 payload={
-                    "event_description": description,
+                    "event_id": pg_event_id,
+                    "firestore_id": firestore_id,
+                    "description": description,
                     "event_time": event_time_str,
                     "user_email": settings.USER_EMAIL,
-                    "pg_event_id": pg_event_id,
-                    "firestore_id": firestore_id,
                 },
             )
+            # Persist the job name on the event row so we can delete/look it up later.
+            try:
+                from app.db.crud import update_event_scheduler_job
+                await update_event_scheduler_job(pg_event_id, job_name)
+            except Exception as exc:
+                logger.debug(f"[intent_detector] update_event_scheduler_job failed: {exc}")
         except Exception as exc:
             logger.warning(f"[intent_detector] Scheduler job creation failed: {exc}")
 
