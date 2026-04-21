@@ -116,8 +116,16 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
         dict with keys: entry_id, entities, categories, events, summary.
     """
     entry_id = str(uuid.uuid4())
+
+    # Scrub PII before the text ever reaches an external LLM.
+    # The original text is still what we persist to the user's own journal.
+    from app.llm.guardrails import redact_pii
+    redacted_text, pii_map = redact_pii(text)
+    if pii_map:
+        logger.info(f"[graph] redacted {len(pii_map)} PII tokens before LLM calls")
+
     initial_state: EntryState = {
-        "raw_text": text,
+        "raw_text": redacted_text,
         "entities": {},
         "categories": [],
         "events": [],
@@ -135,6 +143,14 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
     except Exception as e:
         logger.error(f"Graph invocation failed: {e}", exc_info=True)
         raise
+
+    # Rehydrate: substitute redaction tokens back with their originals so the
+    # user sees their own journal, not "[EMAIL_1]". Only user-visible fields.
+    if pii_map:
+        summary = result.get("summary") or ""
+        for token, original in pii_map.items():
+            summary = summary.replace(token, original)
+        result["summary"] = summary
 
     # Log model tier selections and cache outcomes on the parent span/trace
     get_client().update_current_span(

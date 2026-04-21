@@ -6,15 +6,32 @@ past journal entries, and returns the answer plus source references.
 The /stream variant uses SSE for real-time token delivery.
 """
 import json
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
+from app.llm.guardrails import detect_injection
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _guard_chat_input(message: str, user_id: str) -> None:
+    """Raise 400 if the message is a prompt-injection attempt."""
+    verdict = await detect_injection(message)
+    if verdict["blocked"]:
+        logger.warning(
+            f"[chat] injection blocked for user={user_id}: {verdict['reason']!r}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "prompt_injection_blocked", "reason": verdict["reason"]},
+        )
 
 
 class ChatMessage(BaseModel):
@@ -51,6 +68,8 @@ async def chat_endpoint(req: ChatRequest, user_id: str = Depends(get_current_use
     """
     from app.agents.chat_agent import chat
 
+    await _guard_chat_input(req.message, user_id)
+
     history = [{"role": m.role, "content": m.content} for m in req.history]
     result = await chat(message=req.message, history=history, top_k=req.top_k, user_id=user_id)
     return result
@@ -66,6 +85,8 @@ async def chat_stream_endpoint(req: ChatRequest, user_id: str = Depends(get_curr
       - Final event:       {"token": "", "done": true, "sources": [...]}
     """
     from app.agents.chat_agent import chat_stream
+
+    await _guard_chat_input(req.message, user_id)
 
     history = [{"role": m.role, "content": m.content} for m in req.history]
 
