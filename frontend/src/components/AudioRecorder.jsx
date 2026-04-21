@@ -10,6 +10,7 @@ function formatTime(seconds) {
 export default function AudioRecorder({ onResult, onError }) {
   const [state, setState] = useState('idle') // idle | recording | processing
   const [elapsed, setElapsed] = useState(0)
+  const [jobStatus, setJobStatus] = useState(null) // queued | running | completed | failed
 
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
@@ -54,15 +55,17 @@ export default function AudioRecorder({ onResult, onError }) {
         streamRef.current = null
 
         setState('processing')
+        setJobStatus('queued')
         try {
           const { ingestAudio } = await import('../api/client.js')
-          const result = await ingestAudio(blob)
+          const result = await ingestAudio(blob, (status) => setJobStatus(status))
           onResult(result)
         } catch (err) {
           onError(err.message || 'Failed to process audio.')
         } finally {
           setState('idle')
           setElapsed(0)
+          setJobStatus(null)
         }
       }
 
@@ -124,7 +127,9 @@ export default function AudioRecorder({ onResult, onError }) {
         {isProcessing && (
           <div className={styles.recordLabel}>
             <span className={styles.spinner} style={{ display: 'inline-block', marginRight: 8 }} />
-            Processing audio…
+            {jobStatus === 'running' ? 'Transcribing & analyzing…'
+              : jobStatus === 'completed' ? 'Finishing up…'
+              : 'Queued — waiting for worker…'}
           </div>
         )}
         {state === 'idle' && (
