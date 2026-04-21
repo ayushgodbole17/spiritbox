@@ -62,20 +62,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"pgvector schema initialization failed (non-fatal): {e}")
     try:
-        from app.db.session import create_tables, engine
+        from app.db.session import create_tables
         await create_tables()
-        # create_all() doesn't ALTER existing tables — add missing columns explicitly
-        from sqlalchemy import text
-        async with engine.begin() as conn:
-            for col, typ, default in [
-                ("prompt_tokens", "INTEGER", "0"),
-                ("completion_tokens", "INTEGER", "0"),
-                ("embedding_tokens", "INTEGER", "0"),
-                ("estimated_cost_usd", "DOUBLE PRECISION", "0.0"),
-            ]:
-                await conn.execute(text(
-                    f"ALTER TABLE entries ADD COLUMN IF NOT EXISTS {col} {typ} DEFAULT {default}"
-                ))
         logger.info("PostgreSQL tables ready.")
     except Exception as e:
         logger.warning(f"PostgreSQL table creation failed (non-fatal): {e}")
@@ -122,3 +110,59 @@ async def health_check():
     """Liveness probe — also reports semantic cache stats."""
     from app.llm.cache import cache_stats
     return {"status": "ok", "cache": cache_stats()}
+
+
+# Cache a successful /ready result so probes don't hammer OpenAI with embeddings.
+_READY_CACHE: dict = {"ok_until": 0.0}
+
+
+@app.get("/ready", tags=["Health"])
+async def readiness_check():
+    """
+    Readiness probe — verifies DB and OpenAI are reachable.
+
+    Returns 503 if either dependency is unhealthy. The OpenAI probe result is
+    cached for 30 seconds to avoid unnecessary embedding calls.
+    """
+    import asyncio
+    import json
+    import time
+
+    from fastapi import Response
+    from sqlalchemy import text as _sql_text
+
+    from app.db.session import engine
+    from app.llm.resilience import breaker_status
+
+    checks: dict[str, dict] = {}
+
+    try:
+        async with asyncio.timeout(1.0):
+            async with engine.connect() as conn:
+                await conn.execute(_sql_text("SELECT 1"))
+        checks["db"] = {"status": "ok"}
+    except Exception as exc:
+        checks["db"] = {"status": "fail", "error": str(exc)[:200]}
+
+    now = time.monotonic()
+    if now < _READY_CACHE["ok_until"]:
+        checks["openai"] = {"status": "ok", "cached": True}
+    else:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            async with asyncio.timeout(3.0):
+                await client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input="ping",
+                )
+            _READY_CACHE["ok_until"] = now + 30.0
+            checks["openai"] = {"status": "ok", "cached": False}
+        except Exception as exc:
+            checks["openai"] = {"status": "fail", "error": str(exc)[:200]}
+
+    ok = all(c["status"] == "ok" for c in checks.values())
+    body = {"status": "ready" if ok else "not_ready", "checks": checks, "breakers": breaker_status()}
+    if not ok:
+        return Response(content=json.dumps(body), status_code=503, media_type="application/json")
+    return body

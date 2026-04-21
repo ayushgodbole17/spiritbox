@@ -53,6 +53,9 @@ python-json-logger==3.3.0
 # --- HTTP client ---
 httpx==0.28.1
 
+# --- Resilience (retries, circuit breaker) ---
+tenacity==9.0.0
+
 # --- Timezone data (zoneinfo fallback on Windows + slim Linux images) ---
 tzdata==2025.2
 

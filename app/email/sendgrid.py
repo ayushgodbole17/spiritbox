@@ -5,9 +5,10 @@ Provides send_reminder_email() which is called by both the Cloud Function
 and can be called directly during local development.
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from app.config import settings
+from app.llm.resilience import CircuitOpenError, sendgrid_breaker, sendgrid_retry
 
 logger = logging.getLogger(__name__)
 
@@ -53,18 +54,30 @@ async def send_reminder_email(
         if body_text:
             message.add_content(Content(MimeType.text, body_text))
 
-        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = sg.send(message)
+        @sendgrid_retry(max_attempts=3)
+        def _send() -> Any:
+            sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+            return sg.send(message)
+
+        # Wrap the retrying sync call in the async breaker via a thread bounce.
+        import asyncio
+
+        async def _send_async() -> Any:
+            return await asyncio.to_thread(_send)
+
+        response = await sendgrid_breaker.call(_send_async)
 
         if response.status_code in (200, 202):
             logger.info(f"Email sent to {to_email} (status={response.status_code})")
             return True
-        else:
-            logger.error(
-                f"SendGrid returned unexpected status {response.status_code}: {response.body}"
-            )
-            return False
+        logger.error(
+            f"SendGrid returned unexpected status {response.status_code}: {response.body}"
+        )
+        return False
 
+    except CircuitOpenError as e:
+        logger.warning(f"SendGrid breaker open — skipping send to {to_email}: {e}")
+        return False
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {e}", exc_info=True)
         return False

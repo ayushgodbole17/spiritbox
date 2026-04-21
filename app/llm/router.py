@@ -30,6 +30,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from app.config import settings
+from app.llm.resilience import openai_breaker, openai_retry
 from app.llm.token_tracker import record_usage
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,24 @@ _MODEL_MAP = {
 }
 
 
+@openai_retry(max_attempts=5)
+async def _openai_chat_create(
+    client: AsyncOpenAI,
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    **kwargs: Any,
+) -> ChatCompletion:
+    """Inner call guarded by exponential-backoff retry and the OpenAI breaker."""
+    return await openai_breaker.call(
+        client.chat.completions.create,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        **kwargs,
+    )
+
+
 async def chat_completion(
     tier: str,
     messages: list[dict],
@@ -52,52 +71,38 @@ async def chat_completion(
     """
     Call the OpenAI chat completions API using the specified tier.
 
-    Falls back from Tier 1 → Tier 2 if the primary call fails or returns
-    an empty content string.
-
-    Args:
-        tier:        TIER_1 or TIER_2.
-        messages:    List of {role, content} dicts.
-        temperature: Sampling temperature.
-        **kwargs:    Additional kwargs forwarded to client.chat.completions.create
-                     (e.g. response_format).
+    Each tier is retried on transient errors (rate limit / timeout / connection
+    / 5xx) before the tier-1 → tier-2 cascade fires. The shared circuit breaker
+    short-circuits calls while OpenAI is flapping.
 
     Returns:
         Tuple of (ChatCompletion response, model_name_used).
     """
     client = AsyncOpenAI()
     primary_model = _MODEL_MAP.get(tier, settings.LLM_TIER_2)
-    fallback_model = settings.LLM_TIER_2  # always fall back to the strongest tier
+    fallback_model = settings.LLM_TIER_2
 
-    # --- Primary attempt ---
+    # --- Primary attempt (with retries on transient errors) ---
     try:
-        response = await client.chat.completions.create(
-            model=primary_model,
-            messages=messages,
-            temperature=temperature,
-            **kwargs,
+        response = await _openai_chat_create(
+            client, primary_model, messages, temperature, **kwargs,
         )
         content = response.choices[0].message.content or ""
         if content.strip():
-            logger.debug(f"[router] {tier} → {primary_model} (ok)")
             if response.usage:
                 record_usage(primary_model, response.usage.prompt_tokens, response.usage.completion_tokens)
             return response, primary_model
-        # Empty content — cascade
         logger.warning(
             f"[router] {primary_model} returned empty content — cascading to {fallback_model}"
         )
     except Exception as exc:
         logger.warning(
-            f"[router] {primary_model} failed ({exc}) — cascading to {fallback_model}"
+            f"[router] {primary_model} failed after retries ({exc!r}) — cascading to {fallback_model}"
         )
 
-    # --- Fallback to Tier 2 ---
-    response = await client.chat.completions.create(
-        model=fallback_model,
-        messages=messages,
-        temperature=temperature,
-        **kwargs,
+    # --- Fallback to Tier 2 (also retried) ---
+    response = await _openai_chat_create(
+        client, fallback_model, messages, temperature, **kwargs,
     )
     if response.usage:
         record_usage(fallback_model, response.usage.prompt_tokens, response.usage.completion_tokens)

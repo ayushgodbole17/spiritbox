@@ -15,10 +15,22 @@ from fastapi import UploadFile
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app.llm.resilience import openai_retry, whisper_breaker
 
 logger = logging.getLogger(__name__)
 
 _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+@openai_retry(max_attempts=3)
+async def _whisper_create(audio_file) -> str:
+    """Whisper transcription wrapped in retry + breaker guards."""
+    return await whisper_breaker.call(
+        _client.audio.transcriptions.create,
+        model="whisper-1",
+        file=audio_file,
+        response_format="text",
+    )
 
 # Audio MIME types accepted by Whisper (informational — OpenAI detects format automatically)
 SUPPORTED_AUDIO_TYPES = {
@@ -118,11 +130,7 @@ async def transcribe(file: UploadFile) -> str:
 
     try:
         with open(tmp_path, "rb") as audio_file:
-            response = await _client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text",
-            )
+            response = await _whisper_create(audio_file)
         # response is a plain str when response_format="text"
         transcript = response if isinstance(response, str) else response.text
         logger.info(f"Transcription complete ({len(transcript)} chars).")
