@@ -30,9 +30,19 @@ class Settings(BaseSettings):
     CACHE_SIMILARITY_THRESHOLD: float = Field(0.95, description="Cosine similarity threshold for cache hit")
     CACHE_MAX_SIZE: int = Field(500, description="Max number of entries in semantic cache")
 
-    # Admin dashboard
+    # Admin dashboard — password is required; no default to prevent accidental prod exposure
     ADMIN_USERNAME: str = Field("admin", description="Admin dashboard username")
-    ADMIN_PASSWORD: str = Field("changeme", description="Admin dashboard password")
+    ADMIN_PASSWORD: str = Field(..., description="Admin dashboard password (required, no default)")
+
+    # CORS — comma-separated list of allowed origins. Wildcard is not allowed when credentials are on.
+    CORS_ORIGINS: str = Field(
+        "http://localhost:5173,http://localhost:3000",
+        description="Comma-separated list of allowed CORS origins",
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     # Eval gate thresholds
     EVAL_CLASSIFIER_THRESHOLD: float = Field(0.80, description="Min classifier precision to pass CI gate")

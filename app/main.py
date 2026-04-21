@@ -1,14 +1,42 @@
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pythonjsonlogger.json import JsonFormatter
 
+from app.config import settings
 from app.api.routes import ingest, entries, reminders, chat, admin, auth, habits
 from app.memory.vector_store import init_schema, backfill_from_entries
 from app.middleware.correlation import CorrelationIdMiddleware, CorrelationIdFilter
 from app.middleware.rate_limit import RateLimitMiddleware
+
+
+# --- Secret redaction for logs ---
+# Masks the most common leakage patterns before records hit stdout.
+_SECRET_PATTERNS = [
+    re.compile(r"sk-(?:proj-|ant-|lf-)?[A-Za-z0-9_\-]{16,}"),          # OpenAI / Anthropic / LangFuse keys
+    re.compile(r"Bearer\s+[A-Za-z0-9_\-\.=]{16,}", re.IGNORECASE),     # Bearer tokens
+    re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),  # JWTs
+    re.compile(r"SG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}"),       # SendGrid keys
+]
+
+
+class SecretRedactionFilter(logging.Filter):
+    """Redacts API keys, Bearer tokens and JWTs from log messages."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        for pat in _SECRET_PATTERNS:
+            msg = pat.sub("[REDACTED]", msg)
+        record.msg = msg
+        record.args = None
+        return True
+
 
 # --- Structured JSON logging with correlation ID ---
 _handler = logging.StreamHandler()
@@ -17,6 +45,7 @@ _handler.setFormatter(JsonFormatter(
     rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
 ))
 _handler.addFilter(CorrelationIdFilter())
+_handler.addFilter(SecretRedactionFilter())
 logging.root.handlers = [_handler]
 logging.root.setLevel(logging.INFO)
 
@@ -72,10 +101,10 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Include routers

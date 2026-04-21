@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Whisper's documented per-request limit is 25 MB; keep text well under any LLM context.
+MAX_TEXT_BYTES = 32 * 1024           # 32 KB of prose
+MAX_AUDIO_BYTES = 25 * 1024 * 1024   # 25 MB, matching Whisper API cap
+
 
 class TextEntryRequest(BaseModel):
     text: str
@@ -44,6 +48,13 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
     Accepts a raw text journal entry, runs it through the agent pipeline,
     persists to pgvector, and returns the structured output.
     """
+    text_bytes = len(request.text.encode("utf-8"))
+    if text_bytes > MAX_TEXT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Text entry too large: {text_bytes} bytes > {MAX_TEXT_BYTES} limit",
+        )
+
     logger.info(f"Ingesting text entry for user={user_id}, length={len(request.text)}")
     reset_usage()
 
@@ -84,6 +95,17 @@ async def ingest_audio(
         # Be lenient — Whisper handles many formats; just warn
         logger.warning(f"Non-audio content type received: {file.content_type}")
 
+    # Read up to MAX+1 bytes; if we got more than MAX, the upload is too large.
+    data = await file.read(MAX_AUDIO_BYTES + 1)
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file too large: > {MAX_AUDIO_BYTES} bytes",
+        )
+    # Replace the underlying stream so subsequent reads in transcribe() only see
+    # the bytes we already validated.
+    import io
+    file.file = io.BytesIO(data)
     try:
         text = await transcribe(file)
     except Exception as e:

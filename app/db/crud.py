@@ -82,12 +82,13 @@ async def save_entry(
 # List
 # ---------------------------------------------------------------------------
 
-async def list_entries(limit: int = 20) -> list[dict[str, Any]]:
-    """Return recent entries newest-first with their sentence tags."""
+async def list_entries(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Return recent entries for a user, newest-first, with their sentence tags."""
     async with get_session() as session:
         result = await session.execute(
             select(Entry)
             .options(selectinload(Entry.sentence_tags))
+            .where(Entry.user_id == user_id)
             .order_by(Entry.created_at.desc())
             .limit(limit)
         )
@@ -99,12 +100,12 @@ async def list_entries(limit: int = 20) -> list[dict[str, Any]]:
 # Get one
 # ---------------------------------------------------------------------------
 
-async def get_entry(entry_id: str) -> dict[str, Any] | None:
+async def get_entry(entry_id: str, user_id: str) -> dict[str, Any] | None:
     async with get_session() as session:
         result = await session.execute(
             select(Entry)
             .options(selectinload(Entry.sentence_tags))
-            .where(Entry.id == uuid.UUID(entry_id))
+            .where(Entry.id == uuid.UUID(entry_id), Entry.user_id == user_id)
         )
         entry = result.scalar_one_or_none()
         if entry is None:
@@ -116,10 +117,10 @@ async def get_entry(entry_id: str) -> dict[str, Any] | None:
 # Update
 # ---------------------------------------------------------------------------
 
-async def update_entry(entry_id: str, raw_text: str) -> bool:
+async def update_entry(entry_id: str, user_id: str, raw_text: str) -> bool:
     async with get_session() as session:
         result = await session.execute(
-            select(Entry).where(Entry.id == uuid.UUID(entry_id))
+            select(Entry).where(Entry.id == uuid.UUID(entry_id), Entry.user_id == user_id)
         )
         entry = result.scalar_one_or_none()
         if entry is None:
@@ -133,10 +134,10 @@ async def update_entry(entry_id: str, raw_text: str) -> bool:
 # Delete
 # ---------------------------------------------------------------------------
 
-async def delete_entry(entry_id: str) -> bool:
+async def delete_entry(entry_id: str, user_id: str) -> bool:
     async with get_session() as session:
         result = await session.execute(
-            select(Entry).where(Entry.id == uuid.UUID(entry_id))
+            select(Entry).where(Entry.id == uuid.UUID(entry_id), Entry.user_id == user_id)
         )
         entry = result.scalar_one_or_none()
         if entry is None:
@@ -202,14 +203,16 @@ async def mark_event_reminded(event_id: str) -> bool:
         return True
 
 
-async def list_upcoming_events(limit: int = 10) -> list[dict[str, Any]]:
-    """Return upcoming events not yet reminded, sorted by reminder_time ascending."""
+async def list_upcoming_events(user_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Return upcoming events for a user, not yet reminded, sorted by reminder_time ascending."""
     now = datetime.now(timezone.utc)
     async with get_session() as session:
         result = await session.execute(
             select(Event)
+            .join(Entry, Event.entry_id == Entry.id)
             .where(Event.reminded == False)  # noqa: E712
             .where(Event.reminder_time >= now)
+            .where(Entry.user_id == user_id)
             .order_by(Event.reminder_time.asc())
             .limit(limit)
         )

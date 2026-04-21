@@ -147,6 +147,23 @@ def mock_weaviate_init():
         yield m
 
 
+@pytest.fixture
+def auth_headers():
+    """Valid Bearer token for endpoints that require get_current_user."""
+    from datetime import datetime, timedelta, timezone
+    from jose import jwt
+    from app.config import settings
+
+    payload = {
+        "sub": "test-user",
+        "email": "test@example.com",
+        "name": "Test",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: agent pipeline
 # ---------------------------------------------------------------------------
@@ -273,7 +290,7 @@ async def test_pipeline_continues_if_weaviate_fails(mock_all_openai):
 
 @pytest.mark.asyncio
 async def test_ingest_text_endpoint_success(
-    mock_langfuse, mock_all_openai, mock_weaviate_upsert, mock_weaviate_init
+    mock_langfuse, mock_all_openai, mock_weaviate_upsert, mock_weaviate_init, auth_headers
 ):
     """POST /ingest/text must return 200 with IngestResponse schema."""
     from app.main import app
@@ -284,6 +301,7 @@ async def test_ingest_text_endpoint_success(
         response = await client.post(
             "/ingest/text",
             json={"text": SAMPLE_TEXT},
+            headers=auth_headers,
         )
 
     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
@@ -301,7 +319,7 @@ async def test_ingest_text_endpoint_success(
 
 @pytest.mark.asyncio
 async def test_ingest_text_endpoint_uses_upsert(
-    mock_langfuse, mock_all_openai, mock_weaviate_upsert, mock_weaviate_init
+    mock_langfuse, mock_all_openai, mock_weaviate_upsert, mock_weaviate_init, auth_headers
 ):
     """POST /ingest/text must call upsert_entry exactly once."""
     from app.main import app
@@ -309,7 +327,7 @@ async def test_ingest_text_endpoint_uses_upsert(
     mock_upsert, _ = mock_weaviate_upsert
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.post("/ingest/text", json={"text": SAMPLE_TEXT})
+        await client.post("/ingest/text", json={"text": SAMPLE_TEXT}, headers=auth_headers)
 
     mock_upsert.assert_called_once()
 
@@ -327,11 +345,22 @@ async def test_health_endpoint(mock_weaviate_init):
 
 
 @pytest.mark.asyncio
-async def test_ingest_text_empty_body_rejected(mock_langfuse, mock_weaviate_init):
+async def test_ingest_text_empty_body_rejected(mock_langfuse, mock_weaviate_init, auth_headers):
     """POST /ingest/text with missing 'text' field must return 422."""
     from app.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/ingest/text", json={})
+        response = await client.post("/ingest/text", json={}, headers=auth_headers)
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingest_text_requires_auth(mock_langfuse, mock_weaviate_init):
+    """POST /ingest/text without a Bearer token must return 401."""
+    from app.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/ingest/text", json={"text": "hello"})
+
+    assert response.status_code == 401
