@@ -74,6 +74,33 @@ async def lifespan(app: FastAPI):
             logger.info(f"Backfilled {count} entries into pgvector.")
     except Exception as e:
         logger.warning(f"Embedding backfill failed (non-fatal): {e}")
+
+    # Rewrite legacy user_id='default' rows onto the real user. Pre-Phase-A,
+    # ingests silently landed on 'default' when auth was missing; post-Phase-A
+    # those rows became invisible to the authenticated user. Safe no-op on a
+    # multi-user DB (runs only when there's exactly one real user).
+    try:
+        from sqlalchemy import text as _sql_text
+        from app.db.session import engine
+
+        async with engine.begin() as conn:
+            row = (await conn.execute(_sql_text("SELECT COUNT(*) FROM users"))).scalar()
+            if row == 1:
+                total = 0
+                for table in ("entries", "entry_embeddings", "habits"):
+                    r = await conn.execute(_sql_text(f"""
+                        UPDATE {table}
+                           SET user_id = (SELECT id::text FROM users LIMIT 1)
+                         WHERE user_id = 'default'
+                    """))
+                    total += r.rowcount or 0
+                if total:
+                    logger.info(f"Rewrote {total} legacy user_id='default' rows onto the real user.")
+            else:
+                logger.info(f"Skipping default-user backfill (user count = {row}).")
+    except Exception as e:
+        logger.warning(f"Default-user backfill failed (non-fatal): {e}")
+
     yield
     logger.info("Spiritbox shutting down.")
 

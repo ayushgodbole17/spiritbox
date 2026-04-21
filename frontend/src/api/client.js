@@ -27,24 +27,55 @@ export async function ingestText(text, userId = 'default') {
 }
 
 /**
- * POST /ingest/audio
- * Sends audio as multipart/form-data with field name 'file', filename 'recording.webm'
+ * POST /ingest/audio — server returns 202 + job_id; we poll until done,
+ * then fetch the completed entry so the caller gets a full entry object back.
  * @param {Blob} audioBlob
+ * @param {(status: string) => void} [onProgress] — optional status callback
  */
-export async function ingestAudio(audioBlob) {
+export async function ingestAudio(audioBlob, onProgress) {
   const form = new FormData()
   form.append('file', audioBlob, 'recording.webm')
 
-  const res = await fetch(`${BASE}/ingest/audio`, {
+  const submit = await fetch(`${BASE}/ingest/audio`, {
     method: 'POST',
     headers: authHeaders(),
     body: form,
   })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(err || `HTTP ${res.status}`)
+  if (!submit.ok) {
+    const err = await submit.text()
+    throw new Error(err || `HTTP ${submit.status}`)
   }
-  return res.json()
+  const { job_id } = await submit.json()
+  if (!job_id) throw new Error('Server did not return a job_id')
+
+  // Poll every 2s for up to 5 minutes.
+  const deadline = Date.now() + 5 * 60 * 1000
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2000))
+    const poll = await fetch(`${BASE}/ingest/jobs/${job_id}`, { headers: authHeaders() })
+    if (!poll.ok) {
+      const err = await poll.text()
+      throw new Error(err || `HTTP ${poll.status}`)
+    }
+    const job = await poll.json()
+    if (onProgress) onProgress(job.status)
+
+    if (job.status === 'completed') {
+      if (job.result) return job.result
+      // Fallback: older servers may not embed result — fetch the entry.
+      if (!job.entry_id) throw new Error('Job completed without entry_id')
+      const entryRes = await fetch(`${BASE}/entries/${job.entry_id}`, { headers: authHeaders() })
+      if (!entryRes.ok) {
+        const err = await entryRes.text()
+        throw new Error(err || `HTTP ${entryRes.status}`)
+      }
+      return entryRes.json()
+    }
+    if (job.status === 'failed') {
+      throw new Error(job.error || 'Transcription/pipeline failed')
+    }
+  }
+  throw new Error('Timed out waiting for transcription (5 min).')
 }
 
 /**

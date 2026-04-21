@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select, delete as sa_delete
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Entry, Event, EvalRun, SentenceTag
+from app.db.models import Entry, Event, EvalRun, IngestJob, ReminderDeadLetter, SentenceTag
 from app.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -287,3 +287,142 @@ def _event_to_dict(event: Event) -> dict[str, Any]:
         "scheduler_job": event.scheduler_job,
         "reminded":      event.reminded,
     }
+
+
+# ---------------------------------------------------------------------------
+# Ingest job helpers (Phase D)
+# ---------------------------------------------------------------------------
+
+async def create_ingest_job(user_id: str, kind: str, filename: str | None) -> str:
+    """Insert a fresh ingest_jobs row and return its UUID."""
+    job_id = str(uuid.uuid4())
+    async with get_session() as session:
+        session.add(IngestJob(
+            id=uuid.UUID(job_id),
+            user_id=user_id,
+            kind=kind,
+            status="queued",
+            filename=filename,
+        ))
+        await session.commit()
+    return job_id
+
+
+async def update_ingest_job(
+    job_id: str,
+    *,
+    status: str | None = None,
+    entry_id: str | None = None,
+    error: str | None = None,
+    result_json: str | None = None,
+) -> None:
+    async with get_session() as session:
+        job = await session.get(IngestJob, uuid.UUID(job_id))
+        if job is None:
+            logger.warning(f"[crud] update_ingest_job: {job_id} not found")
+            return
+        if status is not None:
+            job.status = status
+        if entry_id is not None:
+            job.entry_id = uuid.UUID(entry_id)
+        if error is not None:
+            job.error = error[:2000]
+        if result_json is not None:
+            job.result_json = result_json
+        job.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+
+
+async def get_ingest_job(job_id: str, user_id: str) -> dict | None:
+    async with get_session() as session:
+        job = await session.get(IngestJob, uuid.UUID(job_id))
+        if job is None or job.user_id != user_id:
+            return None
+        return {
+            "job_id":      str(job.id),
+            "user_id":     job.user_id,
+            "kind":        job.kind,
+            "status":      job.status,
+            "filename":    job.filename,
+            "entry_id":    str(job.entry_id) if job.entry_id else None,
+            "result_json": job.result_json,
+            "error":       job.error,
+            "created_at":  job.created_at.isoformat() if job.created_at else None,
+            "updated_at":  job.updated_at.isoformat() if job.updated_at else None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Reminder DLQ helpers (Phase D)
+# ---------------------------------------------------------------------------
+
+async def record_reminder_failure(
+    event_id: str,
+    user_email: str | None,
+    description: str | None,
+    event_time_iso: str | None,
+    error: str,
+) -> str:
+    """Record a failed reminder into the DLQ. Returns the DLQ row id."""
+    evt_dt: datetime | None = None
+    if event_time_iso:
+        try:
+            evt_dt = datetime.fromisoformat(event_time_iso.replace("Z", "+00:00"))
+        except ValueError:
+            evt_dt = None
+
+    dlq_id = str(uuid.uuid4())
+    async with get_session() as session:
+        session.add(ReminderDeadLetter(
+            id=uuid.UUID(dlq_id),
+            event_id=uuid.UUID(event_id) if event_id else None,
+            user_email=user_email,
+            description=description,
+            event_time=evt_dt,
+            error=error[:2000],
+        ))
+        await session.commit()
+    return dlq_id
+
+
+async def list_reminder_dlq(resolved: bool = False, limit: int = 100) -> list[dict]:
+    async with get_session() as session:
+        stmt = (
+            select(ReminderDeadLetter)
+            .where(ReminderDeadLetter.resolved == resolved)
+            .order_by(ReminderDeadLetter.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+        return [
+            {
+                "id":              str(r.id),
+                "event_id":        str(r.event_id) if r.event_id else None,
+                "user_email":      r.user_email,
+                "description":     r.description,
+                "event_time":      r.event_time.isoformat() if r.event_time else None,
+                "error":           r.error,
+                "retry_count":     r.retry_count,
+                "resolved":        r.resolved,
+                "created_at":      r.created_at.isoformat() if r.created_at else None,
+                "last_retried_at": r.last_retried_at.isoformat() if r.last_retried_at else None,
+            }
+            for r in rows
+        ]
+
+
+async def mark_dlq_retried(dlq_id: str, *, resolved: bool) -> dict | None:
+    async with get_session() as session:
+        row = await session.get(ReminderDeadLetter, uuid.UUID(dlq_id))
+        if row is None:
+            return None
+        row.retry_count = (row.retry_count or 0) + 1
+        row.last_retried_at = datetime.now(timezone.utc)
+        if resolved:
+            row.resolved = True
+        await session.commit()
+        return {
+            "id":          str(row.id),
+            "retry_count": row.retry_count,
+            "resolved":    row.resolved,
+        }

@@ -117,3 +117,33 @@ class EvalRun(Base):
     entity_f1 = Column(Float)
     prompt_version = Column(String)
     passed = Column(Boolean)
+
+
+class IngestJob(Base):
+    __tablename__ = "ingest_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    kind = Column(String, nullable=False)  # "audio" | "text"
+    status = Column(String, nullable=False, default="queued", index=True)  # queued|running|completed|failed
+    filename = Column(String)
+    entry_id = Column(UUID(as_uuid=True))
+    result_json = Column(Text)  # full pipeline result on success (serialized dict)
+    error = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=_now, index=True)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ReminderDeadLetter(Base):
+    __tablename__ = "reminder_dead_letters"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id = Column(UUID(as_uuid=True), ForeignKey("events.id"), index=True)
+    user_email = Column(String)
+    description = Column(Text)
+    event_time = Column(DateTime(timezone=True))
+    error = Column(Text)
+    retry_count = Column(Integer, default=0)
+    resolved = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=_now, index=True)
+    last_retried_at = Column(DateTime(timezone=True))

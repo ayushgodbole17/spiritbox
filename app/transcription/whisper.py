@@ -92,34 +92,42 @@ def _resolve_extension(file: UploadFile) -> str:
 
 
 async def transcribe(file: UploadFile) -> str:
-    """
-    Transcribe an audio UploadFile using OpenAI Whisper (whisper-1).
-
-    The file is written to a temporary file on disk (Whisper API requires a
-    seekable file object), transcribed, then the temp file is deleted.
-
-    Supported formats: mp3, wav, m4a, webm (audio/webm and audio/webm;codecs=opus),
-    ogg, flac, mp4.
-
-    Args:
-        file: FastAPI UploadFile (audio content).
-
-    Returns:
-        Transcribed text string.
-
-    Raises:
-        ValueError: If the uploaded file is empty.
-        openai.OpenAIError: On API-level errors.
-    """
+    """Transcribe an UploadFile — drains to bytes then delegates to transcribe_bytes."""
     content = await file.read()
+    return await transcribe_bytes(
+        content,
+        filename=file.filename,
+        content_type=file.content_type,
+    )
+
+
+async def transcribe_bytes(
+    content: bytes,
+    *,
+    filename: str | None,
+    content_type: str | None,
+) -> str:
+    """
+    Transcribe raw audio bytes using OpenAI Whisper (whisper-1).
+
+    Separate from `transcribe` so the async ingest worker can call it without
+    constructing a fake UploadFile. Extension is resolved from filename first,
+    then content_type, then falls back to .webm.
+    """
     if not content:
         raise ValueError("Uploaded audio file is empty.")
 
-    suffix = _resolve_extension(file)
+    class _Stub:
+        pass
+
+    stub = _Stub()
+    stub.filename = filename  # type: ignore[attr-defined]
+    stub.content_type = content_type  # type: ignore[attr-defined]
+    suffix = _resolve_extension(stub)  # type: ignore[arg-type]
 
     logger.info(
-        f"Transcribing audio: filename={file.filename!r}, "
-        f"content_type={file.content_type!r}, "
+        f"Transcribing audio: filename={filename!r}, "
+        f"content_type={content_type!r}, "
         f"resolved_suffix={suffix}, "
         f"size={len(content)} bytes"
     )
@@ -131,7 +139,6 @@ async def transcribe(file: UploadFile) -> str:
     try:
         with open(tmp_path, "rb") as audio_file:
             response = await _whisper_create(audio_file)
-        # response is a plain str when response_format="text"
         transcript = response if isinstance(response, str) else response.text
         logger.info(f"Transcription complete ({len(transcript)} chars).")
         return transcript.strip()
