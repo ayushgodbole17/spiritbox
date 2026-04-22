@@ -117,6 +117,16 @@ async def run_entry_pipeline(text: str, user_id: str = "default") -> dict:
     """
     entry_id = str(uuid.uuid4())
 
+    # Propagate the incoming request's correlation ID onto the LangFuse trace
+    # so structured logs and traces can be cross-referenced.
+    try:
+        from app.middleware.correlation import correlation_id
+        cid = correlation_id.get("-")
+        if cid and cid != "-":
+            get_client().update_current_trace(metadata={"correlation_id": cid})
+    except Exception:
+        pass
+
     # Scrub PII before the text ever reaches an external LLM.
     # The original text is still what we persist to the user's own journal.
     from app.llm.guardrails import redact_pii

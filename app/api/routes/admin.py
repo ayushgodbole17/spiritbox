@@ -198,6 +198,7 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
     """Return aggregate analytics from PostgreSQL: entry volumes, category distribution, model tiers, latest eval."""
     from app.db.models import Entry, ReminderDeadLetter, SentenceTag, EvalRun
     from app.db.session import get_session
+    from app.observability.metrics import percentiles
 
     try:
         async with get_session() as session:
@@ -285,6 +286,11 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
                     "run_at":               eval_row.run_at.isoformat() if eval_row.run_at else None,
                 }
 
+            # --- Latency percentiles (last 60 min) ---
+            latency: dict[str, Any] = {}
+            for endpoint in ("ingest_text", "ingest_audio", "chat"):
+                latency[endpoint] = await percentiles(endpoint=endpoint, minutes=60)
+
             return {
                 "overview": {
                     "total_entries":          total_entries,
@@ -298,6 +304,7 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
                 "volume_by_day":           volume_by_day,
                 "category_distribution":   category_distribution,
                 "model_tier_distribution": model_tier_dist,
+                "latency":                 latency,
                 "recent_eval":             recent_eval,
             }
     except Exception as exc:

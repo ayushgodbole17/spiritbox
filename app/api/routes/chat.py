@@ -7,6 +7,7 @@ The /stream variant uses SSE for real-time token delivery.
 """
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.llm.guardrails import detect_injection
+from app.observability.metrics import record_latency
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +73,18 @@ async def chat_endpoint(req: ChatRequest, user_id: str = Depends(get_current_use
     await _guard_chat_input(req.message, user_id)
 
     history = [{"role": m.role, "content": m.content} for m in req.history]
-    result = await chat(message=req.message, history=history, top_k=req.top_k, user_id=user_id)
+    started = time.perf_counter()
+    status = "ok"
+    try:
+        result = await chat(message=req.message, history=history, top_k=req.top_k, user_id=user_id)
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        await record_latency(
+            "chat", int((time.perf_counter() - started) * 1000),
+            user_id=user_id, status=status,
+        )
     return result
 
 

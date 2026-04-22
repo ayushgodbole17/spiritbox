@@ -134,6 +134,17 @@ class IngestJob(Base):
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class RequestMetric(Base):
+    __tablename__ = "request_metrics"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    endpoint = Column(String, nullable=False, index=True)  # "ingest_text" | "ingest_audio" | "chat"
+    user_id = Column(String, index=True)
+    duration_ms = Column(Integer, nullable=False)
+    status = Column(String, default="ok")  # "ok" | "error"
+    created_at = Column(DateTime(timezone=True), default=_now, index=True)
+
+
 class ReminderDeadLetter(Base):
     __tablename__ = "reminder_dead_letters"
 

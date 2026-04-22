@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -10,6 +11,7 @@ from app.api.deps import get_current_user
 from app.db.crud import create_ingest_job, get_ingest_job, update_ingest_job
 from app.jobs.queue import enqueue
 from app.llm.token_tracker import get_usage, reset_usage
+from app.observability.metrics import record_latency
 from app.transcription.whisper import transcribe_bytes
 
 logger = logging.getLogger(__name__)
@@ -61,11 +63,22 @@ async def ingest_text(request: TextEntryRequest, user_id: str = Depends(get_curr
     logger.info(f"Ingesting text entry for user={user_id}, length={len(request.text)}")
     reset_usage()
 
+    started = time.perf_counter()
+    status = "ok"
     try:
         result = await run_entry_pipeline(request.text, user_id=user_id)
     except Exception as e:
+        status = "error"
         logger.error(f"Pipeline error: {e}", exc_info=True)
+        await record_latency(
+            "ingest_text", int((time.perf_counter() - started) * 1000),
+            user_id=user_id, status=status,
+        )
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
+    await record_latency(
+        "ingest_text", int((time.perf_counter() - started) * 1000),
+        user_id=user_id, status=status,
+    )
 
     usage = get_usage()
     return IngestResponse(
@@ -108,6 +121,8 @@ async def _run_audio_pipeline(
     content_type: str | None,
 ) -> None:
     """Background worker: transcribe and ingest, updating ingest_jobs row."""
+    started = time.perf_counter()
+    status = "ok"
     try:
         reset_usage()
         await update_ingest_job(job_id, status="running")
@@ -115,6 +130,7 @@ async def _run_audio_pipeline(
         try:
             text = await transcribe_bytes(data, filename=filename, content_type=content_type)
         except Exception as exc:
+            status = "error"
             logger.error(f"[ingest-job {job_id}] transcription failed: {exc}", exc_info=True)
             await update_ingest_job(job_id, status="failed", error=f"transcription: {exc}")
             return
@@ -122,6 +138,7 @@ async def _run_audio_pipeline(
         try:
             result = await run_entry_pipeline(text, user_id=user_id)
         except Exception as exc:
+            status = "error"
             logger.error(f"[ingest-job {job_id}] pipeline failed: {exc}", exc_info=True)
             await update_ingest_job(job_id, status="failed", error=f"pipeline: {exc}")
             return
@@ -147,11 +164,17 @@ async def _run_audio_pipeline(
         )
         logger.info(f"[ingest-job {job_id}] completed entry_id={result['entry_id']}")
     except Exception as exc:
+        status = "error"
         logger.error(f"[ingest-job {job_id}] unexpected: {exc}", exc_info=True)
         try:
             await update_ingest_job(job_id, status="failed", error=str(exc))
         except Exception:
             pass
+    finally:
+        await record_latency(
+            "ingest_audio", int((time.perf_counter() - started) * 1000),
+            user_id=user_id, status=status,
+        )
 
 
 @router.post(

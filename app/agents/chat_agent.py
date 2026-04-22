@@ -14,9 +14,20 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from langfuse import observe
+from langfuse import observe, get_client
 
 from app.llm.router import chat_completion, chat_completion_stream, TIER_2
+
+
+def _attach_correlation_id() -> None:
+    """Best-effort: propagate X-Request-ID onto the current LangFuse trace."""
+    try:
+        from app.middleware.correlation import correlation_id
+        cid = correlation_id.get("-")
+        if cid and cid != "-":
+            get_client().update_current_trace(metadata={"correlation_id": cid})
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +97,8 @@ async def chat(
     """
     from app.memory.vector_store import hybrid_search, list_entries
 
+    _attach_correlation_id()
+
     # 1. Retrieve relevant entries
     try:
         sources = await hybrid_search(message, limit=top_k, user_id=user_id)
@@ -154,6 +167,8 @@ async def chat_stream(
     The final yield has token="" and includes the sources list.
     """
     from app.memory.vector_store import hybrid_search, list_entries
+
+    _attach_correlation_id()
 
     try:
         sources = await hybrid_search(message, limit=top_k, user_id=user_id)
