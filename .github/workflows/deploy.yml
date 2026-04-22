@@ -152,7 +152,7 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --add-cloudsql-instances spiritbox-491411:asia-south1:spiritbox-db \
-            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }},LANGFUSE_HOST=https://cloud.langfuse.com,PROMPT_VARIANT=local,FRONTEND_URL=https://spiritbox-491411.web.app,USER_EMAIL=godbole.ayush@gmail.com,USER_TIMEZONE=Asia/Kolkata,REMINDER_FROM_EMAIL=noreply@spiritbox.app,CLOUD_FUNCTION_URL=https://asia-south1-spiritbox-491411.cloudfunctions.net/send-reminder" \
+            --set-env-vars "^|^GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}|GCP_REGION=${{ env.GCP_REGION }}|LANGFUSE_HOST=https://cloud.langfuse.com|PROMPT_VARIANT=local|FRONTEND_URL=https://spiritbox-491411.web.app|USER_EMAIL=godbole.ayush@gmail.com|USER_TIMEZONE=Asia/Kolkata|REMINDER_FROM_EMAIL=noreply@spiritbox.app|CLOUD_FUNCTION_URL=https://asia-south1-spiritbox-491411.cloudfunctions.net/send-reminder|CORS_ORIGINS=https://spiritbox-491411.web.app,https://spiritbox-491411.firebaseapp.com" \
             --set-secrets "\
               OPENAI_API_KEY=openai-api-key:latest,\
               DATABASE_URL=database-url:latest,\
@@ -163,6 +163,21 @@ jobs:
               GOOGLE_CLIENT_ID=google-client-id:latest,\
               GOOGLE_CLIENT_SECRET=google-client-secret:latest,\
               JWT_SECRET=jwt-secret:latest"
+
+      - name: CORS preflight smoke test
+        run: |
+          ORIGIN="https://spiritbox-491411.web.app"
+          URL="https://spiritbox-api-1002281700659.asia-south1.run.app/entries"
+          ALLOW=$(curl -sS -o /dev/null -D - -X OPTIONS "$URL" \
+            -H "Origin: $ORIGIN" \
+            -H "Access-Control-Request-Method: GET" \
+            -H "Access-Control-Request-Headers: authorization,content-type" \
+            | tr -d '\r' | awk -F': ' 'tolower($1)=="access-control-allow-origin"{print $2}')
+          echo "allow-origin header: '$ALLOW'"
+          if [ "$ALLOW" != "$ORIGIN" ]; then
+            echo "::error::CORS preflight did not return allow-origin=$ORIGIN — frontend will see 'Failed to fetch'"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # 5. Deploy Cloud Function
