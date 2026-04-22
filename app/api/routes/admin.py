@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -195,7 +196,7 @@ def add_release(release: dict, _: str = Depends(require_admin)) -> dict:
 @router.get("/analytics")
 async def get_analytics(_: str = Depends(require_admin)) -> dict:
     """Return aggregate analytics from PostgreSQL: entry volumes, category distribution, model tiers, latest eval."""
-    from app.db.models import Entry, SentenceTag, EvalRun
+    from app.db.models import Entry, ReminderDeadLetter, SentenceTag, EvalRun
     from app.db.session import get_session
 
     try:
@@ -261,6 +262,16 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
                 for r in cat_rows
             ]
 
+            # --- Reminder DLQ (unresolved count) ---
+            try:
+                dlq_unresolved = (await session.execute(
+                    select(func.count())
+                    .select_from(ReminderDeadLetter)
+                    .where(ReminderDeadLetter.resolved == False)  # noqa: E712
+                )).scalar() or 0
+            except Exception:
+                dlq_unresolved = 0
+
             # --- Latest eval run ---
             eval_row = (await session.execute(
                 select(EvalRun).order_by(EvalRun.run_at.desc()).limit(1)
@@ -276,12 +287,13 @@ async def get_analytics(_: str = Depends(require_admin)) -> dict:
 
             return {
                 "overview": {
-                    "total_entries":     total_entries,
-                    "entries_today":     entries_today,
-                    "entries_this_week": entries_week,
-                    "cache_hit_rate":    cache_hit_rate,
-                    "tier1_calls":       tier1_calls,
-                    "tier2_calls":       tier2_calls,
+                    "total_entries":          total_entries,
+                    "entries_today":          entries_today,
+                    "entries_this_week":      entries_week,
+                    "cache_hit_rate":         cache_hit_rate,
+                    "tier1_calls":            tier1_calls,
+                    "tier2_calls":            tier2_calls,
+                    "reminders_dlq_pending":  dlq_unresolved,
                 },
                 "volume_by_day":           volume_by_day,
                 "category_distribution":   category_distribution,
@@ -502,6 +514,95 @@ async def rag_diagnostics(
     out["hybrid_search"] = await _probe(hybrid_search, "hybrid")
 
     return out
+
+
+# ---------------------------------------------------------------------------
+# Reminder Dead-Letter Queue (Phase D2)
+# ---------------------------------------------------------------------------
+
+class DLQWritePayload(BaseModel):
+    event_id: str | None = None
+    user_email: str | None = None
+    description: str | None = None
+    event_time: str | None = None
+    error: str
+
+
+@router.post("/reminders/dlq")
+async def record_dlq(
+    payload: DLQWritePayload,
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    Called by `send_reminder` Cloud Function when SendGrid fails. Records the
+    failure to `reminder_dead_letters` so it's not lost when the function
+    returns 200 to Cloud Scheduler (preventing retry-into-same-hole storms).
+    """
+    from app.db.crud import record_reminder_failure
+    try:
+        dlq_id = await record_reminder_failure(
+            event_id=payload.event_id or "",
+            user_email=payload.user_email,
+            description=payload.description,
+            event_time_iso=payload.event_time,
+            error=payload.error,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DLQ write failed: {exc}")
+    return {"ok": True, "dlq_id": dlq_id}
+
+
+@router.get("/reminders/dlq")
+async def list_dlq(
+    resolved: bool = False,
+    limit: int = 100,
+    _: str = Depends(require_admin),
+) -> dict:
+    from app.db.crud import list_reminder_dlq
+    rows = await list_reminder_dlq(resolved=resolved, limit=limit)
+    return {"count": len(rows), "entries": rows}
+
+
+@router.post("/reminders/dlq/{dlq_id}/retry")
+async def retry_dlq(
+    dlq_id: str,
+    _: str = Depends(require_admin),
+) -> dict:
+    """
+    Replay a failed reminder by re-invoking the Cloud Function with the same
+    payload. On success the DLQ row is marked resolved; on failure retry_count
+    is bumped so you can see how many times you've tried it.
+    """
+    from app.db.crud import list_reminder_dlq, mark_dlq_retried
+
+    if not settings.CLOUD_FUNCTION_URL:
+        raise HTTPException(status_code=503, detail="CLOUD_FUNCTION_URL not configured")
+
+    all_entries = await list_reminder_dlq(resolved=False, limit=1000)
+    entry = next((e for e in all_entries if e["id"] == dlq_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="DLQ entry not found or already resolved")
+
+    import httpx
+    payload = {
+        "event_id":    entry["event_id"],
+        "description": entry["description"] or "(no description)",
+        "event_time":  entry["event_time"] or "",
+        "user_email":  entry["user_email"] or settings.USER_EMAIL,
+    }
+    ok = False
+    error = None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(settings.CLOUD_FUNCTION_URL, json=payload)
+        ok = resp.status_code < 400
+        if not ok:
+            error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+
+    await mark_dlq_retried(dlq_id, resolved=ok)
+    return {"ok": ok, "dlq_id": dlq_id, "error": error}
 
 
 @router.get("/status")

@@ -59,7 +59,7 @@ def send_reminder(request):
     body_text = f"Spiritbox Reminder\n\n{description}\n{event_time_str} ({user_tz})"
     subject = f"Reminder: {description}"
 
-    success = _send_email(
+    success, send_error = _send_email(
         api_key=os.environ.get("SENDGRID_API_KEY", ""),
         from_email=from_email,
         to_email=user_email,
@@ -69,8 +69,25 @@ def send_reminder(request):
     )
 
     if not success:
-        logger.error(f"Email send failed for event_id={event_id}")
-        return ("Internal Server Error: email send failed", 500)
+        logger.error(f"Email send failed for event_id={event_id}: {send_error}")
+        # Write to DLQ and return 200 so Cloud Scheduler stops retrying the
+        # same payload forever. Admin can replay via POST /reminders/dlq/{id}/retry.
+        try:
+            _write_dlq(
+                event_id=event_id,
+                user_email=user_email,
+                description=description,
+                event_time=event_time_str,
+                error=send_error or "unknown SendGrid error",
+            )
+        except Exception as exc:
+            logger.error(f"DLQ write failed; letting Scheduler retry: {exc}")
+            return ("Internal Server Error: email + DLQ both failed", 500)
+        return (
+            json.dumps({"status": "dlq", "event_id": event_id, "error": send_error}),
+            200,
+            {"Content-Type": "application/json"},
+        )
 
     if event_id:
         try:
@@ -96,9 +113,10 @@ def send_reminder(request):
 # ---------------------------------------------------------------------------
 
 def _send_email(api_key, from_email, to_email, subject, body_html, body_text):
+    """Returns (success, error_message). error_message is None on success."""
     if not api_key:
         logger.info(f"[LocalDev] Would send email to {to_email}: {subject}")
-        return True
+        return True, None
     try:
         from sendgrid import SendGridAPIClient  # type: ignore
         from sendgrid.helpers.mail import Mail, Content, MimeType  # type: ignore
@@ -109,10 +127,39 @@ def _send_email(api_key, from_email, to_email, subject, body_html, body_text):
 
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
-        return response.status_code in (200, 202)
+        if response.status_code in (200, 202):
+            return True, None
+        return False, f"SendGrid HTTP {response.status_code}"
     except Exception as e:
         logger.error(f"SendGrid error: {e}")
-        return False
+        return False, f"{type(e).__name__}: {e}"
+
+
+def _write_dlq(event_id, user_email, description, event_time, error):
+    """POST to Spiritbox admin API /reminders/dlq — auth via basic creds."""
+    api_base = os.environ.get("SPIRITBOX_API_BASE", "")
+    user = os.environ.get("ADMIN_USERNAME", "")
+    pwd = os.environ.get("ADMIN_PASSWORD", "")
+    if not (api_base and user and pwd):
+        raise RuntimeError("SPIRITBOX_API_BASE / ADMIN_USERNAME / ADMIN_PASSWORD not set")
+
+    import requests  # type: ignore
+    auth_header = "Basic " + base64.b64encode(f"{user}:{pwd}".encode()).decode()
+    resp = requests.post(
+        f"{api_base.rstrip('/')}/api/admin/reminders/dlq",
+        json={
+            "event_id":    event_id,
+            "user_email":  user_email,
+            "description": description,
+            "event_time":  event_time,
+            "error":       error,
+        },
+        headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"DLQ API returned {resp.status_code}: {resp.text}")
+    logger.info(f"Recorded reminder failure to DLQ (event_id={event_id})")
 
 
 def _mark_postgres_reminded(event_id: str) -> None:
