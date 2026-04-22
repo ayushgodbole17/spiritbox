@@ -2,49 +2,71 @@
 
 A production-grade personal AI agent for journaling and life management.
 
-## Phase 1 — Core Loop
-
-Phase 1 implements the end-to-end ingest pipeline:
+## What it does
 
 ```
-Audio/Text → Whisper (audio only) → LangGraph pipeline → pgvector (vector store)
-                                          |
-                    entity_extractor → classifier → intent_detector → summarizer
+Audio/Text → Whisper (audio) → LangGraph pipeline → pgvector
+                                     |
+              entity_extractor → classifier → intent_detector → summarizer → habit_tracker
+                                     |
+                              scheduled events → Cloud Scheduler → send_reminder Cloud Function
 ```
+
+Ingested entries feed a RAG chat agent (hybrid search + SSE streaming) and a
+weekly theme rollup that surfaces in the Insights tab.
 
 ### Project structure
 
 ```
 spiritbox/
   app/
-    main.py              FastAPI entry point
-    config.py            Pydantic settings (loaded from .env)
+    main.py                  FastAPI entry point + lifespan hooks
+    config.py                Pydantic settings
     api/routes/
-      ingest.py          POST /ingest/text, POST /ingest/audio
-      entries.py         GET /entries, GET /entries/{id}, GET /entries/search
-      reminders.py       GET /reminders
+      ingest.py              POST /ingest/text, POST /ingest/audio (202 + job poll)
+      entries.py             GET /entries, /entries/{id}, /entries/search (PATCH, DELETE)
+      reminders.py           GET /reminders
+      chat.py                POST /chat, POST /chat/stream (SSE)
+      habits.py              GET /api/habits, /api/habits/{id}
+      digest.py              GET /api/digest/weekly + POST /weekly/run
+      admin.py               /api/admin/{evals, metrics, analytics, costs, reminders/dlq, rollup/weekly, ...}
+      auth.py                Google OAuth + JWT
     agents/
-      graph.py           LangGraph supervisor
-      entity_extractor.py  (stub)
-      classifier.py        (stub)
-      intent_detector.py   (stub)
-      summarizer.py        (stub)
+      graph.py               LangGraph supervisor
+      entity_extractor.py    GPT-4o structured entities
+      classifier.py          Sentence-level category tagging
+      intent_detector.py     Scheduling-intent + reminder creation
+      summarizer.py          2-3 sentence summaries
+      habit_tracker.py       Streak/cadence tracking
+      chat_agent.py          RAG chat (hybrid search + streaming)
+      theme_summarizer.py    Weekly cosine clustering → themed rollups
+    llm/
+      router.py              Tier-1/Tier-2 model router with cascade
+      cache.py               Semantic cache (stampede-protected)
+      resilience.py          tenacity retries + circuit breakers
+      guardrails.py          PII redaction + prompt-injection classifier
+      token_tracker.py       Per-request token + cost bookkeeping
     memory/
-      vector_store.py    pgvector client
-      buffer.py          Conversation buffer (LangChain)
-    scheduler/
-      create_job.py      GCP Cloud Scheduler wrapper
-    email/
-      sendgrid.py        SendGrid wrapper
-    events/
-      firestore.py       Firestore events store
-    transcription/
-      whisper.py         OpenAI Whisper wrapper
-    prompts/             Prompt templates for Phase 2
+      vector_store.py        pgvector + hybrid search (RRF)
+    jobs/
+      queue.py               In-process asyncio background worker
+    observability/
+      metrics.py             Request latency recorder + p50/p95 helpers
+    middleware/
+      correlation.py         X-Request-ID propagation
+      rate_limit.py          Per-IP token bucket
+    transcription/whisper.py
+    email/sendgrid.py
+    scheduler/               Cloud Scheduler wrapper
+    prompts/                 Versioned prompt templates
+  alembic/                   Schema migrations
+  evals/                     Eval harness + LLM-as-judge
   functions/
-    send_reminder/       GCP Cloud Function
-  tests/                 pytest suite + golden dataset
-  .github/workflows/     CI/CD (test → build → deploy)
+    send_reminder/           Cloud Function: email reminders, writes to DLQ on failure
+    weekly_rollup/           Cloud Function: triggers /admin/rollup/weekly
+  frontend/                  Vite + React client (Write / History / Ask / Insights tabs)
+  tests/                     pytest suite + golden dataset
+  .github/workflows/         CI/CD (test → build → deploy)
 ```
 
 ## Quick start
@@ -90,13 +112,34 @@ docker-compose up --build
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Liveness probe |
-| POST | /ingest/text | Ingest text journal entry |
-| POST | /ingest/audio | Ingest audio journal entry |
-| GET | /entries | List recent entries |
-| GET | /entries/search?q=... | Semantic search |
-| GET | /entries/{id} | Get entry by ID |
-| GET | /reminders | List upcoming reminders |
+| GET  | /health                           | Liveness probe |
+| GET  | /ready                            | Readiness (DB + OpenAI) |
+| POST | /ingest/text                      | Ingest text journal entry |
+| POST | /ingest/audio                     | Enqueue audio entry; returns 202 + job_id |
+| GET  | /ingest/jobs/{job_id}             | Poll audio ingest status |
+| GET  | /entries                          | List recent entries |
+| GET  | /entries/search?q=...             | Hybrid (semantic + keyword) search |
+| GET  | /entries/{id}                     | Get entry by ID |
+| PATCH / DELETE | /entries/{id}           | Edit / delete (auth-scoped) |
+| POST | /chat                             | RAG chat over past entries |
+| POST | /chat/stream                      | Streaming variant (SSE) |
+| GET  | /reminders                        | List upcoming reminders |
+| GET  | /api/habits                       | Tracked habits + streaks |
+| GET  | /api/digest/weekly                | Weekly insights digest |
+| POST | /api/digest/weekly/run            | Manually trigger a rollup |
+| GET  | /api/admin/analytics              | Aggregate stats + p50/p95 latency |
+| POST | /api/admin/rollup/weekly          | Cron entry point for weekly themes |
+| POST | /api/admin/reminders/dlq/{id}/retry | Replay a failed reminder from DLQ |
+
+## Observability & safety
+
+- **Auth**: Google OAuth → JWT; all entry/reminder routes scoped by `user_id`.
+- **Guardrails**: PII redaction before LLM calls; prompt-injection classifier on chat.
+- **Resilience**: tenacity retries + circuit breakers around OpenAI / Whisper / SendGrid.
+- **Metrics**: per-request `request_metrics` rows with p50/p95 exposed via `/admin/analytics`.
+- **Tracing**: LangFuse `@observe` spans across the pipeline; `X-Request-ID` propagated onto each trace so structured logs and traces are joinable.
+- **Reminder DLQ**: SendGrid failures land in `reminder_dead_letters` (Cloud Scheduler gets a 200 so it stops retrying into the same hole); admin can replay.
+- **Evals**: LLM-as-judge gate in `evals/`; CI blocks merges that regress classifier precision or entity F1.
 
 ## Environment variables
 
@@ -108,14 +151,13 @@ Push to `main` triggers the GitHub Actions pipeline:
 1. Run tests
 2. Build and push Docker image to GCR
 3. Deploy to Cloud Run
-4. Deploy `send_reminder` Cloud Function
+4. Deploy `send_reminder` + `weekly_rollup` Cloud Functions
 
 Set the following GitHub secrets:
 - `GCP_PROJECT_ID`
 - `GCP_SA_KEY` (service account JSON)
 - Individual secrets for API keys (see `deploy.yml`)
 
-## Roadmap
-
-- **Phase 2**: Wire real LLM calls into all four agents using the prompt templates in `app/prompts/`.
-- **Phase 3**: Model routing, semantic cache, streaming chat, guardrails, hybrid search.
+Cloud Scheduler jobs to wire manually:
+- `send_reminder` — invoked per-event by the intent detector
+- `weekly_rollup` — weekly (e.g. Sunday 20:00 in user TZ) → calls the `weekly_rollup` function
