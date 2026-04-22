@@ -189,6 +189,33 @@ export async function sendChatStream(message, history = [], onToken, topK = 5) {
 }
 
 /**
+ * GET /api/digest/weekly — assembles the weekly insights digest.
+ */
+export async function getWeeklyDigest() {
+  const res = await fetch(`${BASE}/api/digest/weekly`, { headers: authHeaders() })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/**
+ * POST /api/digest/weekly/run — fire the rollup for the current user.
+ */
+export async function triggerWeeklyRollup() {
+  const res = await fetch(`${BASE}/api/digest/weekly/run`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/**
  * GET /reminders
  */
 export async function getReminders() {

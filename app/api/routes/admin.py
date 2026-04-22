@@ -612,6 +612,31 @@ async def retry_dlq(
     return {"ok": ok, "dlq_id": dlq_id, "error": error}
 
 
+@router.post("/rollup/weekly")
+async def run_weekly_rollup_internal(_: str = Depends(require_admin)) -> dict:
+    """
+    Trigger the weekly theme rollup across every user with entries in the
+    last 7 days. Called by the Cloud Scheduler → Cloud Function cron job.
+    """
+    from app.agents.theme_summarizer import run_weekly_rollup_for_all_users
+    try:
+        results = await run_weekly_rollup_for_all_users()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"rollup failed: {exc}")
+    return {
+        "status": "ok",
+        "users_processed": len(results),
+        "results": [
+            {
+                "user_id":     r.get("user_id"),
+                "entry_count": r.get("entry_count", 0),
+                "themes":      len(r.get("themes", [])),
+            }
+            for r in results
+        ],
+    }
+
+
 @router.get("/status")
 def get_status(_: str = Depends(require_admin)) -> dict:
     """Combined system health: evals, cache, LangFuse availability."""

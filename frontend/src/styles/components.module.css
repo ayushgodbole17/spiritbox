@@ -858,3 +858,150 @@
 
 .chatSendBtn:hover:not(:disabled) { opacity: 0.85; transform: scale(1.05); }
 .chatSendBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Insights — weekly digest
+═══════════════════════════════════════════════════════════════════════════ */
+.insightsRoot {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+
+.insightsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.insightsTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+
+.insightsSubtle {
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.insightsButton {
+  padding: 8px 14px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.insightsButton:hover:not(:disabled) { opacity: 0.85; }
+.insightsButton:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.insightsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insightsSectionTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.insightsTheme {
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.insightsThemeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.insightsThemeLabel {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.insightsThemeCount {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.insightsThemeBody {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.insightsMoodBar {
+  height: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.insightsMoodBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444 0%, #eab308 50%, #10b981 100%);
+  transition: width var(--transition);
+}
+
+.insightsHabitList,
+.insightsTopList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insightsHabitRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.insightsHabitStreak {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.insightsTopItem {
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.insightsTopSummary {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0 0 4px 0;
+}

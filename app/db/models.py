@@ -14,7 +14,7 @@ from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey, Integer,
     String, Text, ARRAY,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -142,6 +142,22 @@ class RequestMetric(Base):
     user_id = Column(String, index=True)
     duration_ms = Column(Integer, nullable=False)
     status = Column(String, default="ok")  # "ok" | "error"
+    created_at = Column(DateTime(timezone=True), default=_now, index=True)
+
+
+class ThemeRollup(Base):
+    """Weekly clustered themes across a user's recent journal entries.
+
+    Produced by app/agents/theme_summarizer.py (weekly cron). Feeds into the
+    RAG chat context and the Insights tab.
+    """
+    __tablename__ = "theme_rollups"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    week_start = Column(DateTime(timezone=True), nullable=False, index=True)
+    themes = Column(JSONB, nullable=False)  # [{label, summary, entry_ids, sentiment}]
+    entry_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), default=_now, index=True)
 
 

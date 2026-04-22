@@ -5,6 +5,7 @@ import EntryResult from './components/EntryResult.jsx'
 import EntryList from './components/EntryList.jsx'
 import EntryDetail from './components/EntryDetail.jsx'
 import Chat from './components/Chat.jsx'
+import Insights from './components/Insights.jsx'
 import styles from './styles/App.module.css'
 import compStyles from './styles/components.module.css'
 
@@ -12,7 +13,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 export default function App() {
   const [inputTab, setInputTab]     = useState('text')      // 'text' | 'audio'
-  const [mobileTab, setMobileTab]   = useState('write')     // 'write' | 'history' | 'chat'
+  const [mobileTab, setMobileTab]   = useState('write')     // 'write' | 'history' | 'chat' | 'insights'
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState(null)
   const [selectedEntry, setSelectedEntry] = useState(null)
@@ -173,6 +174,11 @@ export default function App() {
           <Chat />
         </div>
 
+        {/* Mobile tab: insights pane */}
+        <div className={`${styles.mobilePane} ${mobileTab === 'insights' ? styles.mobilePaneVisible : ''}`}>
+          <Insights />
+        </div>
+
       </main>
 
       {/* ── Desktop Chat panel ──────────────────────────────────────────── */}
@@ -202,6 +208,13 @@ export default function App() {
         >
           <span className={styles.mobileNavIcon}>◎</span>
           <span className={styles.mobileNavLabel}>Ask</span>
+        </button>
+        <button
+          className={`${styles.mobileNavBtn} ${mobileTab === 'insights' ? styles.mobileNavBtnActive : ''}`}
+          onClick={() => setMobileTab('insights')}
+        >
+          <span className={styles.mobileNavIcon}>✧</span>
+          <span className={styles.mobileNavLabel}>Insights</span>
         </button>
       </nav>
 
