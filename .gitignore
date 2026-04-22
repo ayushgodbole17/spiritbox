@@ -24,6 +24,7 @@ frontend/dist/
 .vscode/
 .idea/
 *.DS_Store
+.claude/
 
 # Weaviate local data (replaced by pgvector)
 weaviate_data/
