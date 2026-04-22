@@ -1,8 +1,14 @@
-# Environment
+# Environment / secrets
 .env
-*.env
-service-account.json
+.env.*
+!.env.example
+!frontend/.env.production   # public API URL only, needed for prod build
 *-service-account.json
+service-account.json
+*.pem
+*.key
+*credentials*.json
+gcp-key*.json
 
 # Python
 __pycache__/
@@ -12,15 +18,23 @@ __pycache__/
 venv/
 dist/
 build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
 
 # Node / frontend
+node_modules/
 frontend/node_modules/
 frontend/dist/
 
 # Docker
 *.log
 
-# IDE
+# IDE / tooling state
 .vscode/
 .idea/
 *.DS_Store
